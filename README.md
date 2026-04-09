@@ -6,7 +6,7 @@ Sistema completo de marcación XML-JATS para artículos académicos, desarrollad
 Este software es proporcionado "tal cual" (as is), sin garantías de ningún tipo, expresas o implícitas. Su uso es bajo responsabilidad del administrador de la plataforma. Ha sido desarrollado como una herramienta auxiliar de gestión editorial y generación automática. Por lo tanto, no se asume ninguna responsabilidad por cualquier pérdida de datos, falla técnica o alteración inadvertida de los registros.
 
 ## 🎖️ Créditos
-Este sistema fue diseñado y programado para su implementación, contando además con la indispensable **asistencia y acompañamiento de las Inteligencias Artificiales de Google (Gemini Pro) y Anthropic (Sonnet Claude)**, logrando el desarrollo, modernización y soporte de sus componentes.
+Este sistema fue diseñado y programado para su implementación por Michael Espinoza Coila, contando además con la indispensable **asistencia y acompañamiento de las Inteligencias Artificiales de Google (Gemini Pro) y Anthropic (Sonnet Claude)**, logrando el desarrollo, modernización y soporte de sus componentes.
 
 ## 🚀 Características Principales
 
@@ -91,7 +91,7 @@ Editar `config/config.php` con tus credenciales de base de datos:
 ],
 ```
 
-### 3. Configurar Apache
+### 3. Configurar Apache (Opcional)
 
 Crear virtual host en `/etc/apache2/sites-available/jats-assistant.conf`:
 
@@ -356,7 +356,7 @@ Las contribuciones son bienvenidas. Por favor:
 ## 📧 Soporte
 
 Para reportar bugs o solicitar características:
-- Email: soporte@revista.edu
+- Email: mespinoza@unap.edu.pe
 - Issues en GitHub
 
 ## 🔄 Actualizaciones
