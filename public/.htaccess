@@ -1,0 +1,118 @@
+# JATS Markup Assistant - Apache Configuration
+# Configuración de reescritura de URLs y seguridad
+
+DirectoryIndex index.php index.html
+
+# Habilitar mod_rewrite
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # RewriteBase /catg/jats-assistant/public/
+    
+    # Redirigir index a index.php
+    RewriteRule ^$ index.php [L]
+    
+    # URLs amigables para artículos publicados
+    # /articles/123456/  ->  /articles/123456/index.html
+    RewriteRule ^articles/([0-9_]+)/?$ articles/$1/index.html [L]
+    
+    # Servir archivos estáticos directamente
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+</IfModule>
+
+# Configuración de tipos MIME
+<IfModule mod_mime.c>
+    AddType application/xml .xml
+    AddType application/json .json
+    AddType application/pdf .pdf
+    AddType application/epub+zip .epub
+    AddCharset utf-8 .html .xml .json .css .js
+</IfModule>
+
+# Compresión GZIP
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css application/xml application/xhtml+xml application/rss+xml application/javascript application/x-javascript text/javascript
+</IfModule>
+
+# Seguridad - Prevenir acceso a archivos sensibles
+<FilesMatch "\.(htaccess|htpasswd|ini|log|sql|conf)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# Prevenir listado de directorios
+Options -Indexes
+
+# Proteger archivos de configuración
+<Files "config.php">
+    Order Allow,Deny
+    Deny from all
+</Files>
+
+# Headers de seguridad
+<IfModule mod_headers.c>
+    # Prevenir clickjacking
+    Header always set X-Frame-Options "SAMEORIGIN"
+    
+    # Prevenir MIME sniffing
+    Header always set X-Content-Type-Options "nosniff"
+    
+    # XSS Protection
+    Header always set X-XSS-Protection "1; mode=block"
+    
+    # Referrer Policy
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    
+    # Content Security Policy (ajustar según necesidades)
+    # Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"
+</IfModule>
+
+# Configuración de caché
+<IfModule mod_expires.c>
+    ExpiresActive On
+    
+    # Imágenes
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    
+    # CSS y JavaScript
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    
+    # HTML
+    ExpiresByType text/html "access plus 1 hour"
+    
+    # XML y JSON
+    ExpiresByType application/xml "access plus 1 day"
+    ExpiresByType application/json "access plus 1 day"
+    
+    # PDF y EPUB
+    ExpiresByType application/pdf "access plus 1 year"
+    ExpiresByType application/epub+zip "access plus 1 year"
+</IfModule>
+
+# Límite de tamaño de subida (ajustar según php.ini)
+# php_value upload_max_filesize 50M
+# php_value post_max_size 50M
+
+# Timeout para scripts largos
+# php_value max_execution_time 300
+
+# Habilitar logs de errores
+# php_flag display_errors off
+# php_flag log_errors on
+# php_value error_log /var/log/php_errors.log
+
+# Página de error personalizada
+ErrorDocument 404 /404.html
+ErrorDocument 500 /500.html
+
+# CORS para API (si es necesario)
+<IfModule mod_headers.c>
+    # Permitir acceso desde cualquier origen (ajustar en producción)
+    # Header always set Access-Control-Allow-Origin "*"
+    # Header always set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    # Header always set Access-Control-Allow-Headers "Content-Type, Authorization"
+</IfModule>

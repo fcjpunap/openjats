@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Login - Sin Caché</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 500px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .box {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2563eb;
+            margin-top: 0;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #1e40af;
+        }
+        .message {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d1fae5;
+            color: #065f46;
+            border-left: 4px solid #10b981;
+        }
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            border-left: 4px solid #ef4444;
+        }
+        .info {
+            background: #dbeafe;
+            color: #1e40af;
+            border-left: 4px solid #2563eb;
+        }
+        pre {
+            background: #1f2937;
+            color: #f3f4f6;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h1>🔍 Test de Login (Sin Caché)</h1>
+        <p>Esta página usa JavaScript inline para evitar problemas de caché.</p>
+        
+        <form id="testForm">
+            <div class="form-group">
+                <label>Usuario:</label>
+                <input type="text" id="username" value="admin" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Contraseña:</label>
+                <input type="password" id="password" value="admin123" required>
+            </div>
+            
+            <button type="submit">Probar Login</button>
+        </form>
+        
+        <div id="result"></div>
+    </div>
+    
+    <script>
+        // JavaScript inline - NO usa archivos externos, evita caché
+        document.getElementById('testForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const resultDiv = document.getElementById('result');
+            
+            resultDiv.innerHTML = '<div class="message info">Intentando login...</div>';
+            
+            try {
+                console.log('Intentando fetch a: api.php?action=login');
+                
+                const response = await fetch('api.php?action=login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                console.log('Response status:', response.status);
+                console.log('Response headers:', response.headers);
+                
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `
+                        <div class="message success">
+                            <h3>✅ LOGIN EXITOSO</h3>
+                            <p><strong>Usuario:</strong> ${data.user.username}</p>
+                            <p><strong>Email:</strong> ${data.user.email}</p>
+                            <p><strong>Rol:</strong> ${data.user.role}</p>
+                            <p><strong>Nombre:</strong> ${data.user.full_name}</p>
+                            <hr>
+                            <p>El sistema funciona correctamente.</p>
+                            <p><a href="index.php">Ir al Dashboard →</a></p>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="message error">
+                            <h3>❌ Error de Login</h3>
+                            <p><strong>Mensaje:</strong> ${data.message || 'Error desconocido'}</p>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error completo:', error);
+                
+                resultDiv.innerHTML = `
+                    <div class="message error">
+                        <h3>❌ Error de Conexión</h3>
+                        <p><strong>Error:</strong> ${error.message}</p>
+                        <p><strong>Tipo:</strong> ${error.name}</p>
+                        <hr>
+                        <h4>Diagnóstico:</h4>
+                        <ul>
+                            <li>Verifica que api.php existe en /public/api.php</li>
+                            <li>Verifica permisos del archivo (debe ser 644 o 755)</li>
+                            <li>Revisa la consola del navegador (F12) para más detalles</li>
+                        </ul>
+                        <pre>${error.stack || error.toString()}</pre>
+                    </div>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>
