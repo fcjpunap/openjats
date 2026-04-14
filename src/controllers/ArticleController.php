@@ -407,6 +407,139 @@ class ArticleController {
         echo json_encode(['success' => true]);
     }
     
+    public function listMarkupVersions() {
+        header('Content-Type: application/json');
+        $articleId = $_GET['article_id'] ?? null;
+        if (!$articleId) {
+            echo json_encode(['success' => false, 'message' => 'ID no proporcionado']);
+            return;
+        }
+        $versions = $this->articleModel->getMarkupVersions($articleId);
+        echo json_encode(['success' => true, 'versions' => $versions]);
+    }
+
+    public function restoreMarkupVersion() {
+        header('Content-Type: application/json');
+        $markupId = $_GET['markup_id'] ?? null;
+        if (!$markupId) {
+            echo json_encode(['success' => false, 'message' => 'ID de versión no proporcionado']);
+            return;
+        }
+        $markup = $this->articleModel->getMarkupById($markupId);
+        if ($markup) {
+            echo json_encode(['success' => true, 'markup_data' => $markup['markup_data']]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Versión no encontrada']);
+        }
+    }
+
+    public function duplicateArticle() {
+        header('Content-Type: application/json');
+        $articleIdStr = $_GET['article_id'] ?? null;
+        $lang = $_GET['lang'] ?? 'en';
+        
+        if (!$articleIdStr) {
+            echo json_encode(['success' => false, 'message' => 'ID de artículo no proporcionado']);
+            return;
+        }
+        
+        $article = $this->articleModel->getById($articleIdStr);
+        if (!$article) {
+            echo json_encode(['success' => false, 'message' => 'Artículo no encontrado']);
+            return;
+        }
+        
+        $newArticleData = [
+            'issue_id' => $article['issue_id'],
+            'title' => $article['title'] . " (Copia $lang)",
+            'title_en' => $article['title_en'],
+            'abstract' => $article['abstract'],
+            'abstract_en' => $article['abstract_en'],
+            'keywords' => $article['keywords'],
+            'keywords_en' => $article['keywords_en'],
+            'article_type' => $article['article_type'],
+            'language' => $lang,
+            'received_date' => $article['received_date'],
+            'accepted_date' => $article['accepted_date'],
+            'published_date' => $article['published_date'],
+            'pagination' => $article['pagination'],
+            'status' => $article['status'],
+            'uploaded_by' => $_SESSION['user_id'] ?? null,
+            'template_id' => $article['template_id'] ?? null
+        ];
+        
+        $result = $this->articleModel->create($newArticleData);
+        if ($result['success']) {
+            // Also copy authors/affiliations/etc.
+            $newArticleId = $result['article_id'];
+            $this->copyArticleMetadata($articleIdStr, $newArticleId);
+            
+            // Also copy the physical files
+            $sourceDir = $this->config['paths']['articles'] . $articleIdStr;
+            $destDir = $this->config['paths']['articles'] . $newArticleId;
+            if (is_dir($sourceDir)) {
+                $this->moveDirectory($sourceDir, $destDir); // Acts as a copy
+            }
+            
+            echo json_encode(['success' => true, 'new_article_id' => $newArticleId]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Error al duplicar artículo']);
+        }
+    }
+
+    private function copyArticleMetadata($sourceId, $destId) {
+        $authors = $this->articleModel->getAuthors($sourceId);
+        foreach($authors as $a) {
+            unset($a['id']);
+            $a['article_id'] = $destId;
+            $this->articleModel->addAuthor($a);
+        }
+        
+        $affils = $this->articleModel->getAffiliations($sourceId);
+        foreach($affils as $a) {
+            unset($a['id']);
+            $this->articleModel->addAffiliation($destId, $a);
+        }
+        
+        $sections = $this->articleModel->getSections($sourceId);
+        foreach($sections as $s) {
+            unset($s['id']);
+            $s['article_id'] = $destId;
+            $this->articleModel->addSection($s);
+        }
+        
+        $refs = $this->articleModel->getReferences($sourceId);
+        foreach($refs as $r) {
+            unset($r['id']);
+            $r['article_id'] = $destId;
+            $this->articleModel->addReference($r);
+        }
+        
+        $tables = $this->articleModel->getTables($sourceId);
+        foreach($tables as $t) {
+            unset($t['id']);
+            $t['article_id'] = $destId;
+            $this->articleModel->addTable($t);
+        }
+        
+        $figures = $this->articleModel->getFigures($sourceId);
+        foreach($figures as $f) {
+            unset($f['id']);
+            $f['article_id'] = $destId;
+            $this->articleModel->addFigure($f);
+        }
+        
+        $markup = $this->articleModel->getMarkup($sourceId);
+        if ($markup) {
+            $markupData = [
+                'article_id' => $destId,
+                'markup_data' => json_encode($markup['markup_data'], JSON_UNESCAPED_UNICODE),
+                'saved_by' => $_SESSION['user_id'] ?? null
+            ];
+            $this->articleModel->db->insert('article_markup', $markupData);
+        }
+    }
+    
     /**
      * Subir imagen para tablas/figuras
      */

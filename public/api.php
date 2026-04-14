@@ -202,6 +202,39 @@ try {
             $articleController->saveMarkup(); // Ya hace echo internamente y lee php://input directamente
             break;
             
+        case 'list_markup_versions':
+            if (!isset($_SESSION['user_id'])) {
+                http_response_code(401);
+                echo json_encode(['success' => false, 'message' => 'No autorizado']);
+                exit;
+            }
+            require_once __DIR__ . '/../src/controllers/ArticleController.php';
+            $articleController = new ArticleController();
+            $articleController->listMarkupVersions();
+            break;
+
+        case 'restore_markup_version':
+            if (!isset($_SESSION['user_id'])) {
+                http_response_code(401);
+                echo json_encode(['success' => false, 'message' => 'No autorizado']);
+                exit;
+            }
+            require_once __DIR__ . '/../src/controllers/ArticleController.php';
+            $articleController = new ArticleController();
+            $articleController->restoreMarkupVersion();
+            break;
+
+        case 'duplicate_article':
+            if (!isset($_SESSION['user_id'])) {
+                http_response_code(401);
+                echo json_encode(['success' => false, 'message' => 'No autorizado']);
+                exit;
+            }
+            require_once __DIR__ . '/../src/controllers/ArticleController.php';
+            $articleController = new ArticleController();
+            $articleController->duplicateArticle();
+            break;
+            
         case 'update_metadata':
             if (!isset($_SESSION['user_id'])) {
                 http_response_code(401);

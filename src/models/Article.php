@@ -255,15 +255,35 @@ class Article {
             'saved_by' => $userId
         ];
 
-        // Clean up previous markup rows for consistency
-        $this->db->delete('article_markup', 'article_id = :article_id', ['article_id' => $articleId]);
+        // Se comenta la eliminación para mantener un historial de versiones
+        // $this->db->delete('article_markup', 'article_id = :article_id', ['article_id' => $articleId]);
         $this->db->insert('article_markup', $data);
     }
     
     public function getMarkup($articleId) {
         $markup = $this->db->fetchOne(
-            "SELECT * FROM article_markup WHERE article_id = :article_id ORDER BY id DESC",
+            "SELECT * FROM article_markup WHERE article_id = :article_id ORDER BY id DESC LIMIT 1",
             ['article_id' => $articleId]
+        );
+        
+        if ($markup && $markup['markup_data']) {
+            $markup['markup_data'] = json_decode($markup['markup_data'], true);
+        }
+        
+        return $markup;
+    }
+    
+    public function getMarkupVersions($articleId) {
+        return $this->db->fetchAll(
+            "SELECT id, created_at FROM article_markup WHERE article_id = :article_id ORDER BY id DESC",
+            ['article_id' => $articleId]
+        );
+    }
+    
+    public function getMarkupById($markupId) {
+        $markup = $this->db->fetchOne(
+            "SELECT * FROM article_markup WHERE id = :id",
+            ['id' => $markupId]
         );
         
         if ($markup && $markup['markup_data']) {

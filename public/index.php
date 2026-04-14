@@ -538,6 +538,7 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                             <button onclick="openReplaceZip(${art.id})" class="btn" style="border-radius:4px; padding:5px; font-size:12px; background:#10b981; border:1px solid #059669; color:white; cursor:pointer;">📁 Subir ZIP</button>
                             <button onclick="openAssignModal(${art.id}, '${art.issue_id || ''}', '${(art.article_type || '').replace(/'/g, "\\'")}')" class="btn" style="border-radius:4px; padding:5px; font-size:12px; background:#e5e7eb; border:1px solid #ccc; cursor:pointer;">🏷️ Agrupar</button>
                             <a href="editor.php?id=${art.id}" class="btn btn-primary" style="padding:5px 10px; border-radius:4px; text-decoration:none; font-size:12px;">📝 Marcar</a>
+                            <button onclick="duplicateArticle(${art.id}, 'en')" class="btn" style="border-radius:4px; padding:5px; font-size:12px; background:#fef08a; border:1px solid #ca8a04; color:#854d0e; cursor:pointer;" title="Crear una copia exacta del artículo y marcación para el idioma inglés">🔄 Clonar (EN)</button>
                             <button onclick="deleteArticle(${art.id})" style="background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; border-radius:4px; padding:5px 10px; cursor:pointer; font-size:12px;" title="Eliminar manuscrito permanentemente">🗑️</button>
                         </div>`
                     ]);
@@ -563,6 +564,7 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                             <button onclick="openAssignModal(${art.id}, '${art.issue_id || ''}', '${(art.article_type || '').replace(/'/g, "\\'")}')" class="btn" style="border-radius:4px; padding:5px; font-size:12px; background:#e5e7eb; border:1px solid #ccc; cursor:pointer;">🏷️ Reasignar</button>
                             <button onclick="openAssignTemplateModal(${art.id}, ${art.template_id || 'null'})" class="btn" style="border-radius:4px; padding:5px; font-size:12px; background:#dbeafe; border:1px solid #bfdbfe; color:#1e40af; cursor:pointer;">📄 Plantilla</button>
                             <a href="editor.php?id=${art.id}" class="btn btn-primary" style="padding:5px 10px; border-radius:4px; text-decoration:none; font-size:12px;">📝 Marcar</a>
+                            <button onclick="duplicateArticle(${art.id}, 'en')" class="btn" style="border-radius:4px; padding:5px; font-size:12px; background:#fef08a; border:1px solid #ca8a04; color:#854d0e; cursor:pointer;" title="Crear una copia exacta del artículo y marcación para el idioma inglés">🔄 Clonar (EN)</button>
                             <button onclick="deleteArticle(${art.id})" style="background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; border-radius:4px; padding:5px 10px; cursor:pointer; font-size:12px;" title="Eliminar manuscrito permanentemente">🗑️</button>
                         </div>`
                         ];
@@ -789,6 +791,23 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
         loadArticles();
         loadIssues();
         loadSections();
+        function duplicateArticle(id, lang) {
+            if (confirm("¿Crear una copia idéntica de este artículo para la versión en inglés? (Esto duplicará metadatos, marcación y archivos adjuntos)")) {
+                fetch(`api.php?action=duplicate_article&article_id=${id}&lang=${lang}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        alert("✅ Artículo clonado exitosamente. Ahora aparece en su misma lista.");
+                        loadArticles();
+                    } else {
+                        alert("❌ Error: " + (data.message || "No se pudo clonar"));
+                    }
+                })
+                .catch(err => {
+                    alert("Error de red: " + err);
+                });
+            }
+        }
     </script>
 </body>
 </html>

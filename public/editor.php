@@ -229,8 +229,14 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
             <p id="articleMeta" style="margin: 5px 0 0; font-size: 14px; color: #6b7280;"></p>
         </div>
         <div class="editor-actions">
+            <div style="display:flex; align-items:center; gap:5px; border-right:1px solid #ccc; padding-right:15px; margin-right:5px;">
+                <label for="historySelect" style="font-size:12px; font-weight:bold;">🕒 Historial:</label>
+                <select id="historySelect" onchange="restoreVersion()" style="padding:5px; border-radius:4px; border:1px solid #ccc; font-size:12px;">
+                    <option value="">Actual (Último guardado)</option>
+                </select>
+            </div>
             <button class="btn btn-primary" onclick="saveCombinedData()">💾 Guardar Todo</button>
-            <a href="index.php" class="btn">← Volver</a>
+            <a href="index.php" class="btn" onclick="return confirm('¿Seguro que quieres salir sin guardar los últimos cambios?')">← Volver</a>
         </div>
     </header>
     
@@ -378,7 +384,6 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                 <div id="footnotesList" style="margin-top:10px; max-height:120px; overflow-y:auto; font-size:11px;"></div>
             </div>
 
-            <button class="btn btn-primary" style="width:100%; margin-top:10px;" onclick="saveCombinedData()">💾 Guardar TODO (Metadatos y Marcación)</button>
         </aside>
 
         <div class="editor-content">
@@ -1117,6 +1122,8 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                         <strong>Estado:</strong> ${data.article.status}<br>
                         <strong>Subido:</strong> ${new Date(data.article.created_at).toLocaleDateString()}
                     `;
+                    
+                    loadHistoryVersions();
                 } else {
                     showError(data.message || 'No se pudo cargar el artículo');
                 }
@@ -2079,6 +2086,59 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                 visual.style.display = 'block';
                 code.style.display = 'none';
                 btn.textContent = 'Ver HTML';
+            }
+        }
+
+        async function loadHistoryVersions() {
+            try {
+                const response = await fetch(`api.php?action=list_markup_versions&article_id=${articleId}`);
+                const data = await response.json();
+                if (data.success && data.versions && data.versions.length > 0) {
+                    const select = document.getElementById('historySelect');
+                    select.innerHTML = '<option value="">Actual (Último guardado)</option>';
+                    data.versions.forEach(v => {
+                        const date = new Date(v.created_at).toLocaleString();
+                        select.options.add(new Option(`Versión del ${date}`, v.id));
+                    });
+                }
+            } catch (error) {
+                console.error("Error cargando historial de versiones: ", error);
+            }
+        }
+
+        async function restoreVersion() {
+            const versionId = document.getElementById('historySelect').value;
+            if (!versionId) return; // Si es 'Actual' no se recarga (ya está en la actual al cargar la página)
+
+            if (!confirm("¿Deseas restaurar esta versión anterior? Se sobreescribirá lo que ves en pantalla en las pestañas de marcación.")) {
+                document.getElementById('historySelect').value = "";
+                return;
+            }
+
+            try {
+                const response = await fetch(`api.php?action=restore_markup_version&markup_id=${versionId}`);
+                const data = await response.json();
+                if (data.success && data.markup_data) {
+                    let m = data.markup_data;
+                    customSections = m.sections || [];
+                    customReferences = m.references || [];
+                    customAuthors = m.authors || [];
+                    customFootnotes = m.footnotes || [];
+                    customTables = m.tables || [];
+                    customFigures = m.images || [];
+
+                    updateSectionsList();
+                    updateReferencesList();
+                    updateAuthorsList();
+                    updateFootnotesList();
+                    updateTablesList();
+                    updateFiguresList();
+                    alert("Versión restaurada en pantalla. Revisa las pestañas y haz clic en 'Guardar Todo' para confirmarla.");
+                } else {
+                    alert("Error al restaurar: " + (data.message || ""));
+                }
+            } catch (error) {
+                alert("Error de conexión: " + error.message);
             }
         }
     </script>
