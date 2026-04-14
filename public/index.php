@@ -67,22 +67,24 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
             <div id="uploadSection" class="upload-section" style="display: none;">
                 <div class="upload-dialog">
                     <div class="upload-dialog-header">
-                        <h3>Subir Nuevo Artículo</h3>
+                        <h3 id="uploadTitle">Subir Nuevo Artículo</h3>
                         <button onclick="hideUploadDialog()" style="background: none; border: none; font-size: 24px; cursor: pointer;">&times;</button>
                     </div>
                     
                     <div class="upload-zone" id="uploadZone">
                         <div class="upload-icon">📁</div>
-                        <h3>Subir Artículo</h3>
+                        <h3 id="uploadZoneTitle">Subir Artículo</h3>
                         <p>Selecciona un archivo .zip o arrástralo aquí</p>
                         <p class="upload-hint">El archivo debe contener HTML de Word con sus imágenes</p>
                         
-                        <div style="margin: 15px 0; text-align: left; background:#f9fafb; padding:10px; border-radius:6px; border:1px solid #e5e7eb;">
+                        <div id="upload_issue_id_container" style="margin: 15px 0; text-align: left; background:#f9fafb; padding:10px; border-radius:6px; border:1px solid #e5e7eb;">
                             <label style="font-size: 13px; font-weight: bold;">Asignar a Número de Revista (Opcional):</label>
                             <select id="upload_issue_id" style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px;">
                                 <option value="">-- Sin asignar --</option>
                             </select>
                         </div>
+                        
+                        <input type="hidden" id="upload_existing_article_id" value="">
                         
                         <input type="file" id="articleZipInput" accept=".zip" style="display: none;">
                         
@@ -268,7 +270,26 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
         }
         
         function showUploadDialog() {
+            let existingIdEl = document.getElementById('upload_existing_article_id');
+            if (existingIdEl) existingIdEl.value = '';
+            let issueCont = document.getElementById('upload_issue_id_container');
+            if (issueCont) issueCont.style.display = 'block';
+            let titleEl = document.getElementById('uploadTitle');
+            if (titleEl) titleEl.innerText = 'Subir Nuevo Artículo';
+            
             log('Mostrando dialog de upload');
+            document.getElementById('uploadSection').style.display = 'flex';
+        }
+        
+        function openReplaceZip(artId) {
+            let existingIdEl = document.getElementById('upload_existing_article_id');
+            if (existingIdEl) existingIdEl.value = artId;
+            let issueCont = document.getElementById('upload_issue_id_container');
+            if (issueCont) issueCont.style.display = 'none';
+            let titleEl = document.getElementById('uploadTitle');
+            if (titleEl) titleEl.innerText = 'Subir ZIP (Actualizar Artículo ' + artId + ')';
+            
+            log('Mostrando dialog de upload para articulo existente ' + artId);
             document.getElementById('uploadSection').style.display = 'flex';
         }
         
@@ -355,6 +376,9 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
             const issueId = document.getElementById('upload_issue_id');
             if(issueId && issueId.value) formData.append('issue_id', issueId.value);
             
+            const existingId = document.getElementById('upload_existing_article_id');
+            if(existingId && existingId.value) formData.append('existing_article_id', existingId.value);
+            
             log('FormData creado, enviando a api.php');
             
             try {
@@ -392,9 +416,18 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                     statusText.textContent = '¡Completado!';
                     
                     setTimeout(function() {
-                        alert('¡Artículo subido exitosamente!\n\nID: ' + data.article_id);
-                        hideUploadDialog();
-                        window.location.href = 'editor.php?id=' + data.article_id;
+                        let isUpdate = false;
+                        if (existingId && existingId.value) isUpdate = true;
+                        
+                        if (isUpdate) {
+                            alert('¡Archivo ZIP actualizado exitosamente!');
+                            hideUploadDialog();
+                            loadArticles(); // recargar vista
+                        } else {
+                            alert('¡Artículo subido exitosamente!\n\nID: ' + data.article_id);
+                            hideUploadDialog();
+                            window.location.href = 'editor.php?id=' + data.article_id;
+                        }
                     }, 500);
                 } else {
                     log('Upload falló: ' + data.message);
@@ -502,6 +535,7 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                         art.title || 'Manuscrito sin título',
                         new Date(art.created_at).toLocaleDateString(),
                         `<div style="display:flex; gap:5px; flex-wrap:wrap;">
+                            <button onclick="openReplaceZip(${art.id})" class="btn" style="border-radius:4px; padding:5px; font-size:12px; background:#10b981; border:1px solid #059669; color:white; cursor:pointer;">📁 Subir ZIP</button>
                             <button onclick="openAssignModal(${art.id}, '${art.issue_id || ''}', '${(art.article_type || '').replace(/'/g, "\\'")}')" class="btn" style="border-radius:4px; padding:5px; font-size:12px; background:#e5e7eb; border:1px solid #ccc; cursor:pointer;">🏷️ Agrupar</button>
                             <a href="editor.php?id=${art.id}" class="btn btn-primary" style="padding:5px 10px; border-radius:4px; text-decoration:none; font-size:12px;">📝 Marcar</a>
                             <button onclick="deleteArticle(${art.id})" style="background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; border-radius:4px; padding:5px 10px; cursor:pointer; font-size:12px;" title="Eliminar manuscrito permanentemente">🗑️</button>
@@ -525,6 +559,7 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                             art.article_type || 'Falta',
                         new Date(art.created_at).toLocaleDateString(),
                         `<div style="display:flex; gap:5px; flex-wrap:wrap;">
+                            <button onclick="openReplaceZip(${art.id})" class="btn" style="border-radius:4px; padding:5px; font-size:12px; background:#10b981; border:1px solid #059669; color:white; cursor:pointer;">📁 Subir ZIP</button>
                             <button onclick="openAssignModal(${art.id}, '${art.issue_id || ''}', '${(art.article_type || '').replace(/'/g, "\\'")}')" class="btn" style="border-radius:4px; padding:5px; font-size:12px; background:#e5e7eb; border:1px solid #ccc; cursor:pointer;">🏷️ Reasignar</button>
                             <button onclick="openAssignTemplateModal(${art.id}, ${art.template_id || 'null'})" class="btn" style="border-radius:4px; padding:5px; font-size:12px; background:#dbeafe; border:1px solid #bfdbfe; color:#1e40af; cursor:pointer;">📄 Plantilla</button>
                             <a href="editor.php?id=${art.id}" class="btn btn-primary" style="padding:5px 10px; border-radius:4px; text-decoration:none; font-size:12px;">📝 Marcar</a>

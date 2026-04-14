@@ -130,6 +130,10 @@ class Article {
         );
     }
     
+    public function deleteAffiliations($articleId) {
+        return $this->db->delete('affiliations', 'article_id = :article_id', ['article_id' => $articleId]);
+    }
+    
     // Gestión de secciones
     public function addSection($sectionData) {
         return $this->db->insert('article_sections', $sectionData);
@@ -158,6 +162,10 @@ class Article {
         );
     }
     
+    public function deleteTables($articleId) {
+        return $this->db->delete('article_tables', 'article_id = :article_id', ['article_id' => $articleId]);
+    }
+    
     // Gestión de figuras
     public function addFigure($figureData) {
         return $this->db->insert('article_figures', $figureData);
@@ -168,6 +176,10 @@ class Article {
             "SELECT * FROM article_figures WHERE article_id = :article_id ORDER BY figure_order",
             ['article_id' => $articleId]
         );
+    }
+    
+    public function deleteFigures($articleId) {
+        return $this->db->delete('article_figures', 'article_id = :article_id', ['article_id' => $articleId]);
     }
     
     // Gestión de referencias

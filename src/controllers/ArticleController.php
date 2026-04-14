@@ -76,38 +76,78 @@ class ArticleController {
         $processor = new HTMLProcessor($htmlContent);
         $extractedData = $processor->processDocument();
         
-        // Crear artículo en BD
         $articleData = [
-            'title' => $extractedData['metadata']['title'] ?? 'Sin título',
-            'title_en' => $extractedData['metadata']['title_en'] ?? null,
-            'abstract' => $extractedData['abstract']['es'] ?? null,
-            'abstract_en' => $extractedData['abstract']['en'] ?? null,
-            'keywords' => implode(', ', $extractedData['keywords']['es'] ?? []),
-            'keywords_en' => implode(', ', $extractedData['keywords']['en'] ?? []),
-            'received_date' => $extractedData['metadata']['received_date'] ?? null,
-            'accepted_date' => $extractedData['metadata']['accepted_date'] ?? null,
-            'published_date' => $extractedData['metadata']['published_date'] ?? null,
             'status' => 'processing',
             'uploaded_by' => $_SESSION['user_id'] ?? null,
             'issue_id' => !empty($_POST['issue_id']) ? $_POST['issue_id'] : null,
         ];
         
-        $result = $this->articleModel->create($articleData);
+        $existingArticleId = !empty($_POST['existing_article_id']) ? intval($_POST['existing_article_id']) : null;
         
-        if (!$result['success']) {
-            $this->cleanupTemp($tempDir);
-            echo json_encode($result);
-            return;
+        if ($existingArticleId) {
+            $articleId = $existingArticleId;
+            
+            $updateData = [
+                'status' => 'processing',
+                'uploaded_by' => $_SESSION['user_id'] ?? null,
+            ];
+            
+            // Si el HTML tiene título, lo usamos para sobreescribir (o complementar lo de OAI)
+            if (!empty($extractedData['metadata']['title'])) {
+                $updateData['title'] = $extractedData['metadata']['title'];
+            }
+            if (!empty($extractedData['metadata']['title_en'])) {
+                $updateData['title_en'] = $extractedData['metadata']['title_en'];
+            }
+            
+            $updateData['abstract'] = $extractedData['abstract']['es'] ?? null;
+            $updateData['abstract_en'] = $extractedData['abstract']['en'] ?? null;
+            $updateData['keywords'] = implode(', ', $extractedData['keywords']['es'] ?? []);
+            $updateData['keywords_en'] = implode(', ', $extractedData['keywords']['en'] ?? []);
+            $updateData['received_date'] = $extractedData['metadata']['received_date'] ?? null;
+            $updateData['accepted_date'] = $extractedData['metadata']['accepted_date'] ?? null;
+            $updateData['published_date'] = $extractedData['metadata']['published_date'] ?? null;
+            
+            $this->articleModel->update($articleId, $updateData);
+            
+            // Limpiar datos previos si existieran
+            $this->articleModel->deleteAuthors($articleId);
+            $this->articleModel->deleteAffiliations($articleId);
+            $this->articleModel->deleteSections($articleId);
+            $this->articleModel->deleteTables($articleId);
+            $this->articleModel->deleteFigures($articleId);
+            $this->articleModel->deleteReferences($articleId);
+            
+        } else {
+            // Crear artículo en BD
+            $articleData['title'] = $extractedData['metadata']['title'] ?? 'Sin título';
+            $articleData['title_en'] = $extractedData['metadata']['title_en'] ?? null;
+            $articleData['abstract'] = $extractedData['abstract']['es'] ?? null;
+            $articleData['abstract_en'] = $extractedData['abstract']['en'] ?? null;
+            $articleData['keywords'] = implode(', ', $extractedData['keywords']['es'] ?? []);
+            $articleData['keywords_en'] = implode(', ', $extractedData['keywords']['en'] ?? []);
+            $articleData['received_date'] = $extractedData['metadata']['received_date'] ?? null;
+            $articleData['accepted_date'] = $extractedData['metadata']['accepted_date'] ?? null;
+            $articleData['published_date'] = $extractedData['metadata']['published_date'] ?? null;
+            
+            $result = $this->articleModel->create($articleData);
+            
+            if (!$result['success']) {
+                $this->cleanupTemp($tempDir);
+                echo json_encode($result);
+                return;
+            }
+            $articleId = $result['article_id'];
         }
-        
-        $articleId = $result['article_id'];
         
         // Mover archivos a directorio permanente
         $articleDir = $this->config['paths']['articles'] . $articleId;
-        if (!mkdir($articleDir, 0755, true)) {
-            $this->cleanupTemp($tempDir);
-            echo json_encode(['success' => false, 'message' => 'Error al crear directorio del artículo']);
-            return;
+        if (!is_dir($articleDir)) {
+            if (!mkdir($articleDir, 0755, true)) {
+                $this->cleanupTemp($tempDir);
+                echo json_encode(['success' => false, 'message' => 'Error al crear directorio del artículo']);
+                return;
+            }
         }
         
         $this->moveDirectory($tempDir, $articleDir . '/source');
@@ -115,11 +155,6 @@ class ArticleController {
         // Guardar archivo ZIP original
         $zipPath = $articleDir . '/original.zip';
         move_uploaded_file($file['tmp_name'], $zipPath);
-        
-        // Solo actualizar estado si es necesario
-        $this->articleModel->update($articleId, [
-            'status' => 'processing' // Estado válido en el ENUM ("uploaded" no existe)
-        ]);
         
         $this->articleModel->addFile([
             'article_id' => $articleId,
@@ -198,34 +233,34 @@ class ArticleController {
      * Buscar archivo HTML principal en el directorio
      */
     private function findMainHTML($dir) {
+        $fallback = null;
+        
         $files = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($dir),
             RecursiveIteratorIterator::SELF_FIRST
         );
         
         foreach ($files as $file) {
+            $filename = $file->getFilename();
+            $pathname = $file->getPathname();
+            
+            // Ignorar archivos de metadatos de Mac
+            if (strpos($filename, '._') === 0 || strpos($pathname, '__MACOSX') !== false) {
+                continue;
+            }
+            
             if ($file->isFile() && strtolower($file->getExtension()) === 'html') {
-                // Preferir archivos con nombres como "document.html", "article.html"
-                $filename = strtolower($file->getFilename());
-                if (in_array($filename, ['document.html', 'article.html', 'index.html'])) {
-                    return $file->getPathname();
+                $lowerName = strtolower($filename);
+                if (in_array($lowerName, ['document.html', 'article.html', 'index.html'])) {
+                    return $pathname;
+                }
+                if (!$fallback) {
+                    $fallback = $pathname; // Guardar el primero válido como resguardo
                 }
             }
         }
         
-        // Si no se encuentra, retornar el primer HTML
-        $files = new RecursiveIteratorIterator(
-            new RecursiveDirectoryIterator($dir),
-            RecursiveIteratorIterator::SELF_FIRST
-        );
-        
-        foreach ($files as $file) {
-            if ($file->isFile() && strtolower($file->getExtension()) === 'html') {
-                return $file->getPathname();
-            }
-        }
-        
-        return null;
+        return $fallback;
     }
     
     /**
@@ -242,14 +277,22 @@ class ArticleController {
         );
         
         foreach ($files as $file) {
-            $targetPath = $destination . '/' . substr($file->getPathname(), strlen($source) + 1);
+            $filename = $file->getFilename();
+            $pathname = $file->getPathname();
+            
+            // Ignorar metadatos de Mac
+            if (strpos($filename, '._') === 0 || strpos($pathname, '__MACOSX') !== false) {
+                continue;
+            }
+            
+            $targetPath = $destination . '/' . substr($pathname, strlen($source) + 1);
             
             if ($file->isDir()) {
                 if (!is_dir($targetPath)) {
                     mkdir($targetPath, 0755, true);
                 }
             } else {
-                copy($file->getPathname(), $targetPath);
+                copy($pathname, $targetPath);
             }
         }
     }
