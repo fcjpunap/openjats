@@ -37,51 +37,10 @@ class EPUBGenerator {
         $tables = $this->articleModel->getTables($articleId);
         $figures = $this->articleModel->getFigures($articleId);
         
-        // Si hay marcación, priorizar o mezclar los datos de marcación
+        // Si hay marcación, esa es la fuente de la verdad
         if ($markup && isset($markup['markup_data'])) {
-            $markupTables = $markup['markup_data']['tables'] ?? [];
-            $markupFigures = $markup['markup_data']['images'] ?? $markup['markup_data']['figures'] ?? [];
-            
-            // Unificar por label si es posible para no duplicar
-            foreach ($markupTables as $mt) {
-                if (empty($mt['label'])) continue;
-                $found = false;
-                foreach ($tables as &$t) {
-                    if (strcasecmp(trim($t['label'] ?? ''), trim($mt['label'])) === 0) {
-                        // Combinar con cuidado: no sobreescribir con valores vacíos si ya hay datos
-                        foreach ($mt as $key => $val) {
-                            if (!isset($t[$key]) || (empty($t[$key]) && !empty($val))) {
-                                $t[$key] = $val;
-                            } else if (!empty($val) && $key !== 'content' && $key !== 'html' && $key !== 'html_content') {
-                                // Para metadatos (caption, label), el markup manda
-                                $t[$key] = $val;
-                            }
-                        }
-                        $found = true;
-                        break;
-                    }
-                }
-                if (!$found) $tables[] = $mt;
-            }
-            
-            foreach ($markupFigures as $mf) {
-                if (empty($mf['label'])) continue;
-                $found = false;
-                foreach ($figures as &$f) {
-                    if (strcasecmp(trim($f['label'] ?? ''), trim($mf['label'])) === 0) {
-                        foreach ($mf as $key => $val) {
-                            if (!isset($f[$key]) || (empty($f[$key]) && !empty($val))) {
-                                $f[$key] = $val;
-                            } else if (!empty($val)) {
-                                $f[$key] = $val;
-                            }
-                        }
-                        $found = true;
-                        break;
-                    }
-                }
-                if (!$found) $figures[] = $mf;
-            }
+            $tables = $markup['markup_data']['tables'] ?? [];
+            $figures = $markup['markup_data']['images'] ?? $markup['markup_data']['figures'] ?? [];
         }
         
         // Crear directorio temporal

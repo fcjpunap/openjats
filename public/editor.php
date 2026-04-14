@@ -973,7 +973,11 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                     nota: i.nota || '',
                     width: i.width || '100%',
                     id: i.id
-                }))
+                })),
+                sections: customSections,
+                references: customReferences,
+                authors: customAuthors,
+                footnotes: customFootnotes
             };
             
             const metaData = {
@@ -1001,15 +1005,16 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                 });
                 let result = await r1.json();
                 
-                if(markupData.tables.length > 0 || markupData.images.length > 0) {
-                    await fetch('api.php?action=save_markup', {
-                        method: 'POST', headers: {'Content-Type':'application/json'}, 
-                        body: JSON.stringify({article_id: articleId, markup_data: markupData})
-                    });
-                }
+                // SIEMPRE guardar el markup para mantener el historial exacto
+                await fetch('api.php?action=save_markup', {
+                    method: 'POST', headers: {'Content-Type':'application/json'}, 
+                    body: JSON.stringify({article_id: articleId, markup_data: markupData})
+                });
                 
                 if(result.success) {
                     alert("✅ Documento guardado integralmente.");
+                    // Actualizar dropdown de historial
+                    if(typeof loadHistoryVersions === 'function') loadHistoryVersions();
                 } else {
                     alert("❌ Error: " + result.message);
                 }
@@ -1077,6 +1082,9 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                     }
                     
                     // Cargar Marcación de Tablas y Figuras
+                    let loadedTables = false;
+                    let loadedFigures = false;
+                    
                     if(data.article.markup && data.article.markup.markup_data) {
                         const m = data.article.markup.markup_data;
                         if(m.tables && m.tables.length > 0) {
@@ -1091,7 +1099,7 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                                 src: t.src || '',
                                 id: t.id || `table-${Date.now()}-${Math.random()}`
                             }));
-                            updateTablesList();
+                            loadedTables = true;
                         }
                         if(m.images && m.images.length > 0) {
                             customFigures = m.images.map(i => ({
@@ -1102,9 +1110,38 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                                 width: i.width || '100%',
                                 id: i.id || `fig-${Date.now()}-${Math.random()}`
                             }));
-                            updateFiguresList();
+                            loadedFigures = true;
                         }
                     }
+                    
+                    // Fallback a las tablas y figuras crudas extraídas si no había marcación
+                    if (!loadedTables && data.article.tables && data.article.tables.length > 0) {
+                        customTables = data.article.tables.map(t => ({
+                            label: t.label || 'Tabla',
+                            title: t.title || t.caption || '',
+                            caption: t.caption || t.title || '',
+                            html: t.html || t.content || '',
+                            content: t.content || t.html || '',
+                            nota: t.nota || '',
+                            type: t.type || 'html',
+                            src: t.src || '',
+                            id: t.id || `table-${Date.now()}-${Math.random()}`
+                        }));
+                    }
+                    
+                    if (!loadedFigures && data.article.figures && data.article.figures.length > 0) {
+                        customFigures = data.article.figures.map(i => ({
+                            label: i.label || i.caption || 'Figura',
+                            caption: i.caption || i.alt || '',
+                            src: i.src || i.file_path || '',
+                            nota: i.nota || '',
+                            width: i.width || '100%',
+                            id: i.id || `fig-${Date.now()}-${Math.random()}`
+                        }));
+                    }
+                    
+                    updateTablesList();
+                    updateFiguresList();
                     
                     // Mostrar contenido HTML
                     if (data.article.html_content) {

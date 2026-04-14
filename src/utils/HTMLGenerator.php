@@ -29,6 +29,9 @@ class HTMLGenerator {
         $references = $this->articleModel->getReferences($articleId);
         $footnotes = $this->articleModel->getFootnotes($articleId);
         
+        $tables = $this->articleModel->getTables($articleId);
+        $figures = $this->articleModel->getFigures($articleId);
+        
         $markup = $this->articleModel->getMarkup($articleId);
         if ($markup && isset($markup['markup_data'])) {
             $tables = $markup['markup_data']['tables'] ?? [];
