@@ -369,6 +369,8 @@ class EPUBGenerator {
         $sectionsHTML = '';
         foreach ($sections as $section) {
             $content = $section['content'] ?? '';
+            // Strip tables so that unmarked raw HTML tables are destroyed
+            $content = strip_tags($content, '<b><i><u><strong><em><a><p><br><ol><ul><li><sup><sub><img><span><div>');
             $content = $this->sanitizeForXHTML($content);
             
             $sectionsHTML .= '

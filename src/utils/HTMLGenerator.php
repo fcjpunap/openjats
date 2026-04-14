@@ -411,7 +411,7 @@ class HTMLGenerator {
         
         <div class="article-content">
             <?php 
-                $allowedTags = '<b><i><u><strong><em><a><p><br><ul><li><ol><sup><sub><span><div><table><tr><td><th><tbody><thead>';
+                $allowedTags = '<b><i><u><strong><em><a><p><br><ul><li><ol><sup><sub><span><div>';
             ?>
             <?php if ($article['abstract']): ?>
                 <div class="abstract">

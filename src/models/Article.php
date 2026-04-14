@@ -275,7 +275,7 @@ class Article {
     
     public function getMarkupVersions($articleId) {
         return $this->db->fetchAll(
-            "SELECT id, created_at FROM article_markup WHERE article_id = :article_id ORDER BY id DESC",
+            "SELECT id, last_saved as created_at FROM article_markup WHERE article_id = :article_id ORDER BY id DESC",
             ['article_id' => $articleId]
         );
     }

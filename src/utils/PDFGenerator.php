@@ -252,7 +252,7 @@ class PDFGenerator {
         foreach ($sections as $section) {
             $pdf->Bookmark($section['title'], 0, 0, '', '', array(0,0,0));
             
-            $content = strip_tags($section['content'], '<b><i><u><strong><em><a><p><br><ol><ul><li><sup><sub><table><tbody><tr><td><th><thead><tfoot><img>');
+            $content = strip_tags($section['content'], '<b><i><u><strong><em><a><p><br><ol><ul><li><sup><sub><img>');
             
             // Flatten nested links (multi-pass)
             for ($pass = 0; $pass < 5; $pass++) {
