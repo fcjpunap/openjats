@@ -90,11 +90,20 @@ class PDFGenerator {
         
         // Metadata
         $pdf->SetCreator('OpenJATS');
-        $pdf->SetAuthor(implode(', ', array_map(function($a) {
+        $pdf->SetAuthor(str_replace(['"', "'"], '', implode(', ', array_map(function($a) {
             return $a['given_names'] . ' ' . $a['surname'];
-        }, $authors)));
-        $pdf->SetTitle($article['title']);
-        $pdf->SetSubject($article['journal_title'] . (isset($article['volume_number']) ? ', Vol. '.$article['volume_number'] : '') . (isset($article['issue_number']) ? ', Núm. '.$article['issue_number'] : ''));
+        }, $authors))));
+        $pdf->SetTitle(str_replace(['"', "'"], '', $article['title']));
+        
+        $subject = $article['journal_title'] . (isset($article['volume_number']) ? ', Vol. '.$article['volume_number'] : '') . (isset($article['issue_number']) ? ', Núm. '.$article['issue_number'] : '');
+        if (!empty($article['doi'])) {
+            $subject .= ' - https://doi.org/' . $article['doi'];
+        }
+        $pdf->SetSubject($subject);
+
+        if (!empty($article['keywords'])) {
+            $pdf->SetKeywords(str_replace(['"', "'"], '', $article['keywords']));
+        }
 
         // Layout
         $pdf->SetMargins(20, 35, 20); // Aumento el margen superior por la cabecera
@@ -332,8 +341,8 @@ class PDFGenerator {
         foreach ($tables as $t) {
             if (in_array(trim($t['label'] ?? ''), $this->usedTableLabels)) continue;
             $html = '<div style="margin:10px 0; padding:10px;">';
-            $html .= '<div style="font-weight:bold; font-size:10pt;">' . htmlspecialchars($t['label'] ?? 'Tabla') . '</div>';
-            if (!empty($t['caption'])) $html .= '<div style="font-style:italic; font-size:9pt; margin-bottom:5px;">' . htmlspecialchars($t['caption']) . '</div>';
+            $html .= '<div style="font-weight:bold; font-size:11pt;">' . htmlspecialchars($t['label'] ?? 'Tabla') . '</div>';
+            if (!empty($t['caption'])) $html .= '<div style="font-style:italic; font-size:11pt; margin-bottom:5px;">' . htmlspecialchars($t['caption']) . '</div>';
             
             if (!empty($t['src']) && ($t['type'] ?? '') === 'image') {
                 $html .= '<img src="' . $this->resolveInternalPath($t['src']) . '" width="450" />';
@@ -342,14 +351,14 @@ class PDFGenerator {
                 // Limpiar estilos previos
                 $tableHtml = preg_replace('/border=["\']\d+["\']/i', 'border="0"', $tableHtml);
                 // Inyectar estilos APA 7
-                $tableHtml = preg_replace('/<table([^>]*)>/i', '<table$1 width="100%" cellpadding="4" border="0" style="font-size:9pt; border-top: 1px solid black; border-bottom: 1px solid black;">', $tableHtml);
+                $tableHtml = preg_replace('/<table([^>]*)>/i', '<table$1 width="100%" cellpadding="5" border="0" style="font-size:10pt; border-top: 1px solid black; border-bottom: 1px solid black;">', $tableHtml);
                 if (stripos($tableHtml, '<thead') !== false) {
                     $tableHtml = preg_replace('/<\/thead>/i', '<tr style="border-bottom: 1px solid black;"><td colspan="100%" style="height:0; padding:0;"></td></tr></thead>', $tableHtml);
                 }
                 $html .= $tableHtml;
             }
-            if (!empty($t['nota']) && trim($t['nota']) !== '') $html .= '<div style="font-size:9pt; font-style:italic; margin-top:5px;"><strong>Nota.</strong> ' . htmlspecialchars($t['nota']) . '</div>';
-            if (!empty($t['footer'])) $html .= '<div style="font-size:8pt; color:#666; margin-top:3px;">' . htmlspecialchars($t['footer']) . '</div>';
+            if (!empty($t['nota']) && trim($t['nota']) !== '') $html .= '<div style="font-size:11pt; margin-top:5px;"><i>Nota.</i> ' . htmlspecialchars($t['nota']) . '</div>';
+            if (!empty($t['footer'])) $html .= '<div style="font-size:9pt; color:#666; margin-top:3px;">' . htmlspecialchars($t['footer']) . '</div>';
             $html .= '</div>';
             $pdf->writeHTML($html, true, false, true, false, 'J');
         }
@@ -359,8 +368,8 @@ class PDFGenerator {
             $src = $this->resolveInternalPath($f['src'] ?? $f['file_path'] ?? '');
             
             $html = '<div style="margin:15px 0; padding:10px; text-align: left;">';
-            $html .= '<div style="font-weight:bold; font-size:10pt; text-align: left;">' . htmlspecialchars($f['label'] ?? 'Figura') . '</div>';
-            if (!empty($f['caption'])) $html .= '<div style="font-style:italic; font-size:9.5pt; margin-top:5px; text-align: left;">' . htmlspecialchars($f['caption']) . '</div>';
+            $html .= '<div style="font-weight:bold; font-size:11pt; text-align: left;">' . htmlspecialchars($f['label'] ?? 'Figura') . '</div>';
+            if (!empty($f['caption'])) $html .= '<div style="font-style:italic; font-size:11pt; margin-top:5px; text-align: left;">' . htmlspecialchars($f['caption']) . '</div>';
             
             $widthVal = str_replace(['%', 'px'], '', $f['width'] ?? '100');
             $widthPx = (strpos($f['width'] ?? '', '%') !== false) ? (intval($widthVal) / 100) * 450 : min(intval($widthVal), 500);
@@ -371,7 +380,7 @@ class PDFGenerator {
                 $html .= '<div style="text-align: center; color: red; font-style: italic;">[Contenido de figura no disponible]</div>';
             }
             
-            if (!empty($f['nota']) && trim($f['nota']) !== '') $html .= '<div style="font-size:9pt; font-style:italic; margin-top:5px; text-align:left;"><strong>Nota.</strong> ' . htmlspecialchars($f['nota']) . '</div>';
+            if (!empty($f['nota']) && trim($f['nota']) !== '') $html .= '<div style="font-size:11pt; margin-top:5px; text-align:left;"><i>Nota.</i> ' . htmlspecialchars($f['nota']) . '</div>';
             $html .= '</div>';
             $pdf->writeHTML($html, true, false, true, false, 'J');
         }
@@ -416,9 +425,9 @@ class PDFGenerator {
                 $this->usedTableLabels[] = trim($foundTable['label'] ?? '');
                 $t = $foundTable;
                 $html = '<div style="margin:10px 0; padding:10px;">';
-                $html .= '<div style="font-weight:bold; font-size:10pt; text-align: left;">' . htmlspecialchars($t['label'] ?? 'Tabla') . '</div>';
+                $html .= '<div style="font-weight:bold; font-size:11pt; text-align: left;">' . htmlspecialchars($t['label'] ?? 'Tabla') . '</div>';
                 $tCaption = !empty($t['caption']) ? $t['caption'] : (!empty($t['title']) ? $t['title'] : '');
-                if (!empty($tCaption)) $html .= '<div style="font-style:italic; font-size:9pt; margin-bottom:5px; text-align: left;">' . htmlspecialchars($tCaption) . '</div>';
+                if (!empty($tCaption)) $html .= '<div style="font-style:italic; font-size:11pt; margin-bottom:5px; text-align: left;">' . htmlspecialchars($tCaption) . '</div>';
                 
                 if (!empty($t['src']) && ($t['type'] ?? '') === 'image') {
                     $html .= '<img src="' . $this->resolveInternalPath($t['src']) . '" width="450" />';
@@ -430,7 +439,7 @@ class PDFGenerator {
                     $tableHtml = preg_replace('/style=["\'][^"\']*border[^"\']*["\']/i', '', $tableHtml);
                     
                     // Inyectar estilos APA 7 para PDF/TCPDF
-                    $tableHtml = preg_replace('/<table([^>]*)>/i', '<table$1 width="100%" cellpadding="5" border="0" style="font-size:9.5pt; border-top: 1px solid black; border-bottom: 1px solid black; border-collapse:collapse;">', $tableHtml);
+                    $tableHtml = preg_replace('/<table([^>]*)>/i', '<table$1 width="100%" cellpadding="5" border="0" style="font-size:10pt; border-top: 1px solid black; border-bottom: 1px solid black; border-collapse:collapse;">', $tableHtml);
                     
                     if (stripos($tableHtml, '<thead') !== false) {
                        $tableHtml = preg_replace('/<\/thead>/i', '<tr style="line-height:1px;"><td colspan="100%" style="border-bottom: 1px solid black; height:1px; padding:0;"></td></tr></thead>', $tableHtml);
@@ -441,8 +450,8 @@ class PDFGenerator {
                     $html .= $tableHtml;
                 }
 
-                if (!empty($t['nota']) && trim($t['nota']) !== '') $html .= '<div style="font-size:9pt; font-style:italic; margin-top:5px; text-align: left;"><strong>Nota.</strong> ' . htmlspecialchars($t['nota']) . '</div>';
-                if (!empty($t['footer'])) $html .= '<div style="font-size:8pt; color:#666; margin-top:3px; text-align: left;">' . htmlspecialchars($t['footer']) . '</div>';
+                if (!empty($t['nota']) && trim($t['nota']) !== '') $html .= '<div style="font-size:11pt; margin-top:5px; text-align: left;"><i>Nota.</i> ' . htmlspecialchars($t['nota']) . '</div>';
+                if (!empty($t['footer'])) $html .= '<div style="font-size:9pt; color:#666; margin-top:3px; text-align: left;">' . htmlspecialchars($t['footer']) . '</div>';
                 $html .= '</div>';
                 return $html;
             }
@@ -454,9 +463,9 @@ class PDFGenerator {
                 $f = $foundFigure;
                 $src = $this->resolveInternalPath($f['src'] ?? $f['file_path'] ?? '');
                 
-                $html = '<div style="margin:15px 0; text-align: left;">';
-                $html .= '<div style="font-weight:bold; font-size:10pt;">' . htmlspecialchars($f['label'] ?? 'Figura') . '</div>';
-                if (!empty($f['caption'])) $html .= '<div style="font-style:italic; font-size:9.5pt; margin-top:5px;">' . htmlspecialchars($f['caption']) . '</div>';
+                $html = '<div style="margin:15px 0; padding:10px; text-align: left;">';
+                $html .= '<div style="font-weight:bold; font-size:11pt; text-align: left;">' . htmlspecialchars($f['label'] ?? 'Figura') . '</div>';
+                if (!empty($f['caption'])) $html .= '<div style="font-style:italic; font-size:11pt; margin-top:5px; text-align: left;">' . htmlspecialchars($f['caption']) . '</div>';
                 
                 $widthVal = str_replace(['%', 'px'], '', $f['width'] ?? '100');
                 if(strpos($f['width'] ?? '', '%') !== false) {
@@ -468,10 +477,10 @@ class PDFGenerator {
                 if ($src) {
                     $html .= '<table width="100%"><tr><td align="center"><img src="' . $src . '" width="' . $widthPx . '" border="0" /></td></tr></table>';
                 } else {
-                    $html .= '<div style="text-align: center; color: red;">[Figura ' . htmlspecialchars($label) . ' no disponible]</div>';
+                    $html .= '<div style="text-align: center; color: red; font-style: italic;">[Figura ' . htmlspecialchars($label) . ' no disponible]</div>';
                 }
                 
-                if (!empty($f['nota'])) $html .= '<div style="font-size:9pt; font-style:italic; margin-top:8px; text-align:left;"><strong>Nota.</strong> ' . htmlspecialchars($f['nota']) . '</div>';
+                if (!empty($f['nota']) && trim($f['nota']) !== '') $html .= '<div style="font-size:11pt; margin-top:5px; text-align:left;"><i>Nota.</i> ' . htmlspecialchars($f['nota']) . '</div>';
                 $html .= '</div>';
                 return $html;
             }

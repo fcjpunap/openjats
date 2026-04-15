@@ -502,7 +502,7 @@ class HTMLGenerator {
                     </div>
                     <?php if (!empty($table['nota'])): ?>
                         <div class="table-note" style="font-size: 13px; font-style: italic; margin-top: 8px;">
-                            <strong>Nota.</strong> <?= htmlspecialchars($table['nota']) ?>
+                            <i>Nota.</i> <?= htmlspecialchars($table['nota']) ?>
                         </div>
                     <?php endif; ?>
                     <?php if (!empty($table['footer'])): ?>
@@ -530,7 +530,7 @@ class HTMLGenerator {
                     </div>
                     <?php if (!empty($figure['nota'])): ?>
                         <div class="figure-note" style="font-size: 13px; font-style: italic; margin-top: 8px; text-align: left;">
-                            <strong>Nota.</strong> <?= htmlspecialchars($figure['nota']) ?>
+                            <i>Nota.</i> <?= htmlspecialchars($figure['nota']) ?>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -604,7 +604,7 @@ class HTMLGenerator {
                         </div>
                         <?php if (!empty($t['nota']) && trim($t['nota']) !== ''): ?>
                             <div class="table-note" style="font-size: 13px; font-style: italic; margin-top: 8px;">
-                                <strong>Nota.</strong> <?= htmlspecialchars($t['nota']) ?>
+                                <i>Nota.</i> <?= htmlspecialchars($t['nota']) ?>
                             </div>
                         <?php endif; ?>
                         <?php if (!empty($t['footer'])): ?>
@@ -635,7 +635,7 @@ class HTMLGenerator {
                         </div>
                         <?php if (!empty($f['nota']) && trim($f['nota']) !== ''): ?>
                             <div class="figure-note" style="font-size: 13px; font-style: italic; margin-top: 8px; text-align: left;">
-                                <strong>Nota.</strong> <?= htmlspecialchars($f['nota']) ?>
+                                <i>Nota.</i> <?= htmlspecialchars($f['nota']) ?>
                             </div>
                         <?php endif; ?>
                     </div>

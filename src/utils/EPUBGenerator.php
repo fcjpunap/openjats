@@ -764,7 +764,7 @@ table.apa-table tr:last-child th {
             $html .= $tableHtml;
         }
 
-        if (!empty($t['nota']) && trim($t['nota']) !== '') $html .= '<div class="table-note" style="font-size:0.9em;font-style:italic;margin-top:0.5em;"><strong>Nota.</strong> ' . htmlspecialchars($t['nota']) . '</div>';
+        if (!empty($t['nota']) && trim($t['nota']) !== '') $html .= '<div class="table-note" style="font-size:0.9em;font-style:italic;margin-top:0.5em;"><i>Nota.</i> ' . htmlspecialchars($t['nota']) . '</div>';
         if (!empty($t['footer']) && trim($t['footer']) !== '') $html .= '<div class="table-footer" style="font-size:0.8em;color:#666;margin-top:0.3em;">' . htmlspecialchars($t['footer']) . '</div>';
         $html .= '</div>';
         return $html;
@@ -781,7 +781,7 @@ table.apa-table tr:last-child th {
             $html .= '<div style="text-align: center; margin: 1em 0;"><img src="' . htmlspecialchars($src) . '" style="max-width:' . htmlspecialchars($w) . '; height:auto;" alt="Figura"/></div>';
         }
         
-        if (!empty($f['nota']) && trim($f['nota']) !== '') $html .= '<div class="figure-note" style="font-size:0.9em; font-style:italic; margin-top:0.5em; text-align:left;"><strong>Nota.</strong> ' . htmlspecialchars($f['nota']) . '</div>';
+        if (!empty($f['nota']) && trim($f['nota']) !== '') $html .= '<div class="figure-note" style="font-size:0.9em; font-style:italic; margin-top:0.5em; text-align:left;"><i>Nota.</i> ' . htmlspecialchars($f['nota']) . '</div>';
         $html .= '</div>';
         return $html;
     }
