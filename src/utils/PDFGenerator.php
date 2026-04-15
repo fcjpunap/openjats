@@ -90,11 +90,11 @@ class PDFGenerator {
         
         // Metadata
         $pdf->SetCreator('OpenJATS');
-        $authorString = implode('; ', array_map(function($a) {
+        $authorString = implode(' - ', array_map(function($a) {
             return trim($a['given_names'] . ' ' . $a['surname']);
         }, $authors));
-        $pdf->SetAuthor(str_replace(['"', "'"], '', $authorString));
-        $pdf->SetTitle(str_replace(['"', "'"], '', $article['title']));
+        $pdf->SetAuthor(str_replace(['"', "'", '“', '”'], '', $authorString));
+        $pdf->SetTitle(str_replace(['"', "'", '“', '”'], '', $article['title']));
         
         $subject = $article['journal_title'] . (isset($article['volume_number']) ? ', Vol. '.$article['volume_number'] : '') . (isset($article['issue_number']) ? ', Núm. '.$article['issue_number'] : '');
         if (!empty($article['doi'])) {
@@ -103,10 +103,12 @@ class PDFGenerator {
         $pdf->SetSubject($subject);
 
         if (!empty($article['keywords'])) {
-            $kwString = str_replace(';', ',', $article['keywords']);
+            // First treat periods, semicolons, and newlines as commas
+            $kwString = str_replace(['.', ';', "\r", "\n", '“', '”', '"'], ',', $article['keywords']);
             $kws = array_map('trim', explode(',', $kwString));
             $kws = array_filter(array_unique($kws));
-            $pdf->SetKeywords(str_replace(['"', "'"], '', implode(', ', $kws)));
+            // Use hyphen instead of commas to prevent PDF viewers from showing structural quotes
+            $pdf->SetKeywords(implode(' - ', $kws));
         }
 
         // Layout
