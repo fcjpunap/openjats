@@ -337,9 +337,7 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                         <button class="btn-secondary" title="Derecha" onclick="document.execCommand('justifyRight',false,null)">⫸</button>
                         <button class="btn-secondary" title="Justificar" onclick="document.execCommand('justifyFull',false,null)">▤</button>
                         <div style="border-left:1px solid #ccc; margin:0 5px; min-height:15px;"></div>
-                        <input type="number" id="manual_link_ref" placeholder="Ref N°" title="Número de la referencia (ej: 1)" style="width:50px; padding:2px; font-size:11px;" min="1">
                         <button class="btn-secondary" title="Vincular selección a referencia" onclick="manualLinkCitation()" style="background:#dbeafe; color:#1d4ed8; font-weight:bold; font-size:10px;">🔗 Ref</button>
-                        <input type="number" id="manual_link_fn" placeholder="Nota N°" title="Número de la nota al pie (ej: 1)" style="width:50px; padding:2px; font-size:11px; margin-left:5px;" min="1">
                         <button class="btn-secondary" title="Vincular selección a nota al pie" onclick="manualLinkFn()" style="background:#fef08a; color:#854d0e; font-weight:bold; font-size:10px;">🔗 Nota pie</button>
                         <button class="btn-secondary" title="Insertar Tabla" onclick="insertTablePlaceholder()" style="background:#eff6ff; color:#1e40af; font-weight:bold; font-size:10px;">📊 Tabla</button>
                         <button class="btn-secondary" title="Insertar Figura" onclick="insertFigurePlaceholder()" style="background:#f0fdf4; color:#166534; font-weight:bold; font-size:10px;">🖼️ Figura</button>
@@ -504,19 +502,24 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
         function manualLinkCitation() {
             let sel = window.getSelection();
             if (sel.rangeCount > 0 && !sel.isCollapsed) {
-                let refIdNum = document.getElementById('manual_link_ref').value;
-                if(!refIdNum) return alert('Debes ingresar el N° de la referencia a la cual apuntar (Ejemplo: 1).');
-                let refIdx = parseInt(refIdNum) - 1;
-                if(refIdx < 0 || refIdx >= customReferences.length) return alert('Esta referencia no existe en la pestaña Referencias.');
-                
-                if(!customReferences[refIdx].linked_count) customReferences[refIdx].linked_count = 0;
-                customReferences[refIdx].linked_count++;
-                
-                let selectedText = sel.toString();
-                document.execCommand("insertHTML", false, `<a href="#ref-${refIdNum}" class="citation-link" data-rid="ref-${refIdNum}" style="color:#2563eb; text-decoration:none; border-bottom:1px dotted #2563eb;">${selectedText}</a>`);
-                updateReferencesList();
+                if (customReferences.length === 0) return alert("Primero debes añadir referencias a la lista en la pestaña Referencias.");
+                let options = customReferences.map((r, i) => `${i+1}: ${r.authors} (${r.year||'S.F.'}) - ${r.title.substring(0,40)}...`).join("\n");
+                let num = prompt("Selecciona el N° exacto de la referencia a vincular:\n\n" + options, "1");
+                if (num) {
+                    let refIdx = parseInt(num) - 1;
+                    if (customReferences[refIdx]) {
+                        if(!customReferences[refIdx].linked_count) customReferences[refIdx].linked_count = 0;
+                        customReferences[refIdx].linked_count++;
+                        let selectedText = sel.toString();
+                        let refIdNum = num; // Maintain 1-indexed visual ID for export linking matching
+                        document.execCommand("insertHTML", false, `<a href="#ref-${refIdNum}" class="citation-link" data-rid="ref-${refIdNum}" style="color:#2563eb; text-decoration:none; border-bottom:1px dotted #2563eb;">${selectedText}</a>`);
+                        updateReferencesList();
+                    } else {
+                        alert("Número de referencia no válido.");
+                    }
+                }
             } else {
-                alert("Primero debes seleccionar el texto en el editor de contenido, y digitar el número de Referencia.");
+                alert("Primero debes seleccionar el texto en el editor de contenido, y luego presionar el botón '🔗 Ref'.");
             }
         }
 
@@ -524,13 +527,21 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
         function manualLinkFn() {
             let sel = window.getSelection();
             if (sel.rangeCount > 0 && !sel.isCollapsed) {
-                let fnIdNum = document.getElementById('manual_link_fn').value;
-                if(!fnIdNum) return alert('Debes ingresar el N° de la nota al pie (Ejemplo: 1).');
-                
-                let selectedText = sel.toString();
-                document.execCommand("insertHTML", false, `<sup><a href="#fn-${fnIdNum}" class="fn-link" data-fnid="fn-${fnIdNum}" style="color:#d97706; text-decoration:none;">${selectedText}</a></sup>`);
+                if (customFootnotes.length === 0) return alert("Primero debes añadir notas al pie en la pestaña Nota Pie.");
+                let options = customFootnotes.map((f, i) => `${i+1}: ${f.text.substring(0,50)}...`).join("\n");
+                let num = prompt("Selecciona el N° de la nota al pie a vincular:\n\n" + options, "1");
+                if (num) {
+                    let fnIdx = parseInt(num) - 1;
+                    if (customFootnotes[fnIdx]) {
+                        let fnIdNum = customFootnotes[fnIdx].fn_id;
+                        let selectedText = sel.toString();
+                        document.execCommand("insertHTML", false, `<sup><a href="#fn-${fnIdNum}" class="fn-link" data-fnid="fn-${fnIdNum}" style="color:#d97706; text-decoration:none;">${selectedText}</a></sup>`);
+                    } else {
+                        alert("Número de nota al pie no válido.");
+                    }
+                }
             } else {
-                alert("Primero debes seleccionar el texto en el editor de contenido, y digitar el número de Nota al pie.");
+                alert("Primero debes seleccionar el texto en el editor de contenido, y luego presionar el botón '🔗 Nota pie'.");
             }
         }
 
