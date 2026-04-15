@@ -648,6 +648,11 @@ table.apa-table tr:last-child th {
         // 2. Escapar ampersands que no sean entidades existentes
         $html = preg_replace('/&(?![a-zA-Z0-9#]+;)/', '&amp;', $html);
         
+        // Purga de estilos de fuente inline del editor web que rompen la lectura de EPUB
+        $html = preg_replace('/font-size\s*:\s*[^;"\']+[;]?/i', '', $html);
+        $html = preg_replace('/font-family\s*:\s*[^;"\']+[;]?/i', '', $html);
+        $html = preg_replace('/style=["\']\s*["\']/i', '', $html); // Clean empty styles
+        
         // 3. Cerrar etiquetas huérfanas comunes para XHTML
         $html = preg_replace('/<(br|hr|img|input|meta|link)([^>]*?)(?<!\/)>/i', '<$1$2 />', $html);
         
@@ -688,7 +693,8 @@ table.apa-table tr:last-child th {
     private function renderTable($t) {
         $html = '<div class="table-container" style="margin:1em 0; padding:0.5em; border:none;">';
         $html .= '<div class="table-label" style="font-weight:bold;">' . htmlspecialchars($t['label'] ?? 'Tabla') . '</div>';
-        if (!empty($t['caption'])) $html .= '<div class="table-caption" style="font-style:italic;font-size:0.9em;margin-bottom:0.5em;">' . htmlspecialchars($t['caption']) . '</div>';
+        $tCaptionPlaceholder = !empty($t['caption']) ? $t['caption'] : (!empty($t['title']) ? $t['title'] : '');
+        if (!empty($tCaptionPlaceholder)) $html .= '<div style="font-style:italic; font-size:11pt; margin-bottom:10px; text-align:left;">' . htmlspecialchars($tCaptionPlaceholder) . '</div>';
         
         if (!empty($t['src']) && (($t['type'] ?? '') === 'image' || stripos($t['src'], 'uploads/') !== false)) {
             $html .= '<img src="' . htmlspecialchars($t['src']) . '" style="max-width:100%; height:auto;" alt="Tabla"/>';

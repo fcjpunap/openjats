@@ -473,8 +473,11 @@ class HTMLGenerator {
                     <?php if ($table['label']): ?>
                         <div class="table-label"><?= htmlspecialchars($table['label']) ?></div>
                     <?php endif; ?>
-                    <?php if ($table['caption']): ?>
-                        <div class="table-caption"><?= htmlspecialchars($table['caption']) ?></div>
+                    <?php 
+                        $tCaption = !empty($table['caption']) ? $table['caption'] : (!empty($table['title']) ? $table['title'] : '');
+                        if ($tCaption): 
+                    ?>
+                        <div class="table-caption"><?= htmlspecialchars($tCaption) ?></div>
                     <?php endif; ?>
                     <div class="table-responsive">
                         <?php if (!empty($table['src']) && ($table['type'] ?? '') === 'image'): ?>
@@ -586,8 +589,11 @@ class HTMLGenerator {
                     ?>
                     <div class="table-container" style="margin:1em 0; padding:0.5em; border-top:none;">
                         <div class="table-label" style="font-weight:bold;"><?= htmlspecialchars($t['label'] ?? 'Tabla') ?></div>
-                        <?php if (!empty($t['caption'])): ?>
-                            <div class="table-caption" style="font-style:italic;font-size:0.9em;margin-bottom:0.5em;"><?= htmlspecialchars($t['caption']) ?></div>
+                        <?php 
+                            $tCaptionPlaceholder = !empty($t['caption']) ? $t['caption'] : (!empty($t['title']) ? $t['title'] : '');
+                            if ($tCaptionPlaceholder): 
+                        ?>
+                            <div class="table-caption" style="font-style:italic;font-size:0.9em;margin-bottom:0.5em;"><?= htmlspecialchars($tCaptionPlaceholder) ?></div>
                         <?php endif; ?>
                         <div class="table-responsive">
                             <?php if (!empty($t['src']) && ($t['type'] ?? '') === 'image'): ?>

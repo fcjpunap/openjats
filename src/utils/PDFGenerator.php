@@ -417,7 +417,8 @@ class PDFGenerator {
                 $t = $foundTable;
                 $html = '<div style="margin:10px 0; padding:10px;">';
                 $html .= '<div style="font-weight:bold; font-size:10pt; text-align: left;">' . htmlspecialchars($t['label'] ?? 'Tabla') . '</div>';
-                if (!empty($t['caption'])) $html .= '<div style="font-style:italic; font-size:9pt; margin-bottom:5px; text-align: left;">' . htmlspecialchars($t['caption']) . '</div>';
+                $tCaption = !empty($t['caption']) ? $t['caption'] : (!empty($t['title']) ? $t['title'] : '');
+                if (!empty($tCaption)) $html .= '<div style="font-style:italic; font-size:9pt; margin-bottom:5px; text-align: left;">' . htmlspecialchars($tCaption) . '</div>';
                 
                 if (!empty($t['src']) && ($t['type'] ?? '') === 'image') {
                     $html .= '<img src="' . $this->resolveInternalPath($t['src']) . '" width="450" />';
