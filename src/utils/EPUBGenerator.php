@@ -303,7 +303,8 @@ class EPUBGenerator {
         $journalHTML .= '<h3>' . htmlspecialchars($article['journal_title'] ?? 'Revista Académica') . '</h3>';
         $journalHTML .= '<p>ISSN: ' . htmlspecialchars($article['issn'] ?? '') . ' | Vol. ' . htmlspecialchars($article['volume_number'] ?? '') . ', Núm. ' . htmlspecialchars($article['issue_number'] ?? '') . ' (' . htmlspecialchars($article['year'] ?? '') . ')</p>';
         if (!empty($article['journal_url'])) $journalHTML .= '<p>URL: <a href="'.htmlspecialchars($article['journal_url']).'">' . htmlspecialchars($article['journal_url']) . '</a></p>';
-        if (!empty($article['doi'])) $journalHTML .= '<p>DOI: <a href="https://doi.org/'.htmlspecialchars($article['doi']).'">' . htmlspecialchars($article['doi']) . '</a></p>';
+        $cleanDoi = preg_replace('/^https?:\/\/(dx\.)?doi\.org\//i', '', $article['doi'] ?? '');
+        if (!empty($cleanDoi)) $journalHTML .= '<p>DOI: <a href="https://doi.org/'.htmlspecialchars($cleanDoi).'">' . htmlspecialchars('https://doi.org/' . $cleanDoi) . '</a></p>';
         $journalHTML .= '<p>Licencia CC BY 4.0</p>';
         $journalHTML .= '</div>';
         

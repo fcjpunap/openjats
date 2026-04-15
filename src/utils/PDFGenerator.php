@@ -98,7 +98,8 @@ class PDFGenerator {
         
         $subject = $article['journal_title'] . (isset($article['volume_number']) ? ', Vol. '.$article['volume_number'] : '') . (isset($article['issue_number']) ? ', Núm. '.$article['issue_number'] : '');
         if (!empty($article['doi'])) {
-            $subject .= ' - https://doi.org/' . $article['doi'];
+            $cleanDoi = preg_replace('/^https?:\/\/(dx\.)?doi\.org\//i', '', $article['doi'] ?? '');
+            $subject .= ' - https://doi.org/' . $cleanDoi;
         }
         $pdf->SetSubject($subject);
 

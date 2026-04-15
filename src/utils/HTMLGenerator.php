@@ -404,9 +404,11 @@ class HTMLGenerator {
                 <?php if ($article['published_date']): ?>
                     <span>Publicado: <?= date('d/m/Y', strtotime($article['published_date'])) ?></span>
                 <?php endif; ?>
-                <?php if ($article['doi']): ?>
-                    <span>DOI: <a href="https://doi.org/<?= htmlspecialchars($article['doi']) ?>" target="_blank">
-                        <?= htmlspecialchars($article['doi']) ?>
+                <?php if ($article['doi']): 
+                    $cleanDoi = preg_replace('/^https?:\/\/(dx\.)?doi\.org\//i', '', $article['doi']);
+                ?>
+                    <span>DOI: <a href="https://doi.org/<?= htmlspecialchars($cleanDoi) ?>" target="_blank">
+                        <?= htmlspecialchars('https://doi.org/' . $cleanDoi) ?>
                     </a></span>
                 <?php endif; ?>
             </div>
