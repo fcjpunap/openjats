@@ -686,12 +686,32 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
             document.getElementById('section_editor').innerHTML = '';
             updateSectionsList();
         }
+        function moveSectionUp(idx) {
+            if (idx > 0) {
+                const temp = customSections[idx];
+                customSections[idx] = customSections[idx - 1];
+                customSections[idx - 1] = temp;
+                updateSectionsList();
+            }
+        }
+        
+        function moveSectionDown(idx) {
+            if (idx < customSections.length - 1) {
+                const temp = customSections[idx];
+                customSections[idx] = customSections[idx + 1];
+                customSections[idx + 1] = temp;
+                updateSectionsList();
+            }
+        }
+
         function updateSectionsList() {
             document.getElementById('sectionsList').innerHTML = customSections.map((s, i) => `
                 <div style="background:#f8f9fa; padding:4px; margin-bottom:4px; border:1px solid #ddd;">
                     <div style="font-weight:bold;">[H${Math.min(s.level||1, 3)}] ${s.type_name}</div>
                     <div style="max-height: 40px; overflow: hidden; font-size: 10px; color:#555;">${s.content.replace(/<[^>]+>/g, '').substring(0,80)}...</div>
                     <div style="margin-top: 3px; display:flex; justify-content: flex-end; gap:5px;">
+                        ${i > 0 ? \`<button onclick="moveSectionUp(${i})" style="cursor:pointer; border:1px solid #ccc; padding:2px 5px; border-radius:3px; background:white;" title="Subir">⬆️</button>\` : \`<button disabled style="opacity:0.3; border:1px solid #ccc; padding:2px 5px; border-radius:3px; background:white;">⬆️</button>\`}
+                        ${i < customSections.length - 1 ? \`<button onclick="moveSectionDown(${i})" style="cursor:pointer; border:1px solid #ccc; padding:2px 5px; border-radius:3px; background:white;" title="Bajar">⬇️</button>\` : \`<button disabled style="opacity:0.3; border:1px solid #ccc; padding:2px 5px; border-radius:3px; background:white;">⬇️</button>\`}
                         <button onclick="editSection(${i})" style="color:#2563eb; cursor:pointer; border:1px solid #ccc; padding:2px 5px; border-radius:3px; background:white;">✏️ Editar</button>
                         <button onclick="customSections.splice(${i},1); updateSectionsList();" style="color:red; cursor:pointer; border:1px solid #ccc; padding:2px 5px; border-radius:3px; background:white;">🗑️ Eliminar</button>
                     </div>
