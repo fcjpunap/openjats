@@ -255,8 +255,8 @@ class Article {
             'saved_by' => $userId
         ];
 
-        // Se comenta la eliminación para mantener un historial de versiones
-        // $this->db->delete('article_markup', 'article_id = :article_id', ['article_id' => $articleId]);
+        // Se restaura la eliminación porque la tabla tiene UNIQUE KEY(article_id)
+        $this->db->delete('article_markup', 'article_id = :article_id', ['article_id' => $articleId]);
         $this->db->insert('article_markup', $data);
     }
     
