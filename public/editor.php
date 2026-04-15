@@ -1681,130 +1681,83 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
             document.body.insertAdjacentHTML('beforeend', modalHTML);
         }
 
-        async function generateXML() {
-            if (!confirm('¿Generar archivo XML-JATS?')) return;
+        function showLoadingModal(title) {
+            const overlay = document.createElement('div');
+            overlay.id = 'loadingModalOverlay';
+            overlay.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:10000; display:flex; justify-content:center; align-items:center; flex-direction:column;';
+            overlay.innerHTML = `
+                <div style="background:white; padding:30px; border-radius:12px; text-align:center; min-width:300px; box-shadow:0 10px 25px rgba(0,0,0,0.2);">
+                    <h3 style="margin-top:0; color:#1f2937;">${title}</h3>
+                    <div style="width:100%; background-color:#e5e7eb; border-radius:9999px; height:12px; overflow:hidden; margin:20px 0;">
+                        <div style="width:100%; height:100%; background-color:#3b82f6; animation: indeterminate 1.5s infinite linear; transform-origin: 0% 50%;"></div>
+                    </div>
+                    <p style="margin-bottom:0; color:#6b7280; font-size:14px;">Por favor, espera unos segundos...</p>
+                </div>
+                <style>
+                    @keyframes indeterminate {
+                        0% { transform: translateX(-100%) scaleX(0.2); }
+                        20% { transform: translateX(-50%) scaleX(0.5); }
+                        100% { transform: translateX(100%) scaleX(0.2); }
+                    }
+                </style>
+            `;
+            document.body.appendChild(overlay);
+        }
+
+        function hideLoadingModal() {
+            const overlay = document.getElementById('loadingModalOverlay');
+            if (overlay) overlay.remove();
+        }
+
+        async function processGeneration(endpoint, confirmMsg, successTitle, errorPrefix) {
+            if (!confirm(confirmMsg)) return;
+            
+            showLoadingModal('Generando archivo...');
             
             try {
-                const response = await fetch(`api.php?action=generate_xml&article_id=${articleId}`);
+                const response = await fetch(endpoint);
                 const data = await response.json();
                 
+                hideLoadingModal();
+                
                 if (data.success) {
-                    if (data.download_url) showSuccessDownload('XML-JATS generado exitosamente', data.download_url);
-                    else alert('✅ XML-JATS generado exitosamente');
+                    if (data.download_url) showSuccessDownload(successTitle, data.download_url);
+                    else alert('✅ ' + successTitle);
                 } else {
-                    alert('❌ Error: ' + (data.message || 'No se pudo generar XML'));
+                    alert('❌ Error: ' + (data.message || errorPrefix));
                 }
             } catch (error) {
+                hideLoadingModal();
                 alert('❌ Error de conexión: ' + error.message);
             }
+        }
+
+        async function generateXML() {
+            await processGeneration(`api.php?action=generate_xml&article_id=${articleId}`, '¿Generar archivo XML-JATS?', 'XML-JATS generado exitosamente', 'No se pudo generar XML');
         }
         
         async function generateSciELO() {
-            if (!confirm('¿Generar archivo XML SciELO?')) return;
-            
-            try {
-                const response = await fetch(`api.php?action=generate_scielo&article_id=${articleId}`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    if (data.download_url) showSuccessDownload('XML SciELO generado exitosamente', data.download_url);
-                    else alert('✅ XML SciELO generado exitosamente');
-                } else {
-                    alert('❌ Error: ' + (data.message || 'No se pudo generar XML SciELO'));
-                }
-            } catch (error) {
-                alert('❌ Error de conexión: ' + error.message);
-            }
+            await processGeneration(`api.php?action=generate_scielo&article_id=${articleId}`, '¿Generar archivo XML SciELO?', 'XML SciELO generado exitosamente', 'No se pudo generar XML SciELO');
         }
         
         async function generateRedalyc() {
-            if (!confirm('¿Generar archivo XML Redalyc?')) return;
-            
-            try {
-                const response = await fetch(`api.php?action=generate_redalyc&article_id=${articleId}`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    if (data.download_url) showSuccessDownload('XML Redalyc generado exitosamente', data.download_url);
-                    else alert('✅ XML Redalyc generado exitosamente');
-                } else {
-                    alert('❌ Error: ' + (data.message || 'No se pudo generar XML Redalyc'));
-                }
-            } catch (error) {
-                alert('❌ Error de conexión: ' + error.message);
-            }
+            await processGeneration(`api.php?action=generate_redalyc&article_id=${articleId}`, '¿Generar archivo XML Redalyc?', 'XML Redalyc generado exitosamente', 'No se pudo generar XML Redalyc');
         }
         
         async function generatePDF() {
-            if (!confirm('¿Generar archivo PDF?')) return;
-            
-            try {
-                const response = await fetch(`api.php?action=generate_pdf&article_id=${articleId}`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    if (data.download_url) showSuccessDownload('PDF generado exitosamente', data.download_url);
-                    else alert('✅ PDF generado exitosamente\n\n' + data.message);
-                } else {
-                    alert('❌ Error: ' + (data.message || 'No se pudo generar PDF'));
-                }
-            } catch (error) {
-                alert('❌ Error de conexión: ' + error.message);
-            }
+            await processGeneration(`api.php?action=generate_pdf&article_id=${articleId}`, '¿Generar archivo PDF?', 'PDF generado exitosamente', 'No se pudo generar PDF');
         }
         
         async function generateHTML() {
-            if (!confirm('¿Generar archivo HTML?')) return;
-            
-            try {
-                const response = await fetch(`api.php?action=generate_html&article_id=${articleId}`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    if (data.download_url) showSuccessDownload('HTML generado exitosamente', data.download_url);
-                    else alert('✅ HTML generado exitosamente');
-                } else {
-                    alert('❌ Error: ' + (data.message || 'No se pudo generar HTML'));
-                }
-            } catch (error) {
-                alert('❌ Error de conexión: ' + error.message);
-            }
+            await processGeneration(`api.php?action=generate_html&article_id=${articleId}`, '¿Generar archivo HTML?', 'HTML generado exitosamente', 'No se pudo generar HTML');
         }
         
         async function generateEPUB() {
-            if (!confirm('¿Generar archivo EPUB?')) return;
-            
-            try {
-                const response = await fetch(`api.php?action=generate_epub&article_id=${articleId}`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    if (data.download_url) showSuccessDownload('EPUB generado exitosamente', data.download_url);
-                    else alert('✅ EPUB generado exitosamente');
-                } else {
-                    alert('❌ Error: ' + (data.message || 'No se pudo generar EPUB'));
-                }
-            } catch (error) {
-                alert('❌ Error de conexión: ' + error.message);
-            }
+            await processGeneration(`api.php?action=generate_epub&article_id=${articleId}`, '¿Generar archivo EPUB?', 'EPUB generado exitosamente', 'No se pudo generar EPUB');
         }
         
         async function exportOJS() {
-            if (!confirm('¿Agrupar galeras (XML, HTML, PDF, EPUB) e imágenes en un archivo ZIP para OJS?')) return;
-            
-            try {
-                const response = await fetch(`api.php?action=generate_ojs_zip&article_id=${articleId}`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    if (data.download_url) showSuccessDownload('Paquete OJS generado exitosamente', data.download_url);
-                    else alert('✅ Paquete OJS generado exitosamente');
-                } else {
-                    alert('❌ Error: ' + (data.message || 'No se pudo generar el ZIP para OJS'));
-                }
-            } catch (error) {
-                alert('❌ Error de conexión: ' + error.message);
-            }
+            await processGeneration(`api.php?action=generate_ojs_zip&article_id=${articleId}`, '¿Agrupar galeras (XML, HTML, PDF, EPUB) e imágenes en un archivo ZIP para OJS?', 'Paquete OJS generado exitosamente', 'No se pudo generar el ZIP para OJS');
         }
         
         // Cargar artículo al abrir la página
