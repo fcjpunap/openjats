@@ -707,7 +707,7 @@ ALTER TABLE `article_footnotes`
 --
 ALTER TABLE `article_markup`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `unique_article_markup` (`article_id`),
+  ADD KEY `unique_article_markup` (`article_id`),
   ADD KEY `saved_by` (`saved_by`);
 
 --
