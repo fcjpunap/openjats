@@ -90,9 +90,10 @@ class PDFGenerator {
         
         // Metadata
         $pdf->SetCreator('OpenJATS');
-        $pdf->SetAuthor(str_replace(['"', "'"], '', implode(', ', array_map(function($a) {
-            return $a['given_names'] . ' ' . $a['surname'];
-        }, $authors))));
+        $authorString = implode('; ', array_map(function($a) {
+            return trim($a['given_names'] . ' ' . $a['surname']);
+        }, $authors));
+        $pdf->SetAuthor(str_replace(['"', "'"], '', $authorString));
         $pdf->SetTitle(str_replace(['"', "'"], '', $article['title']));
         
         $subject = $article['journal_title'] . (isset($article['volume_number']) ? ', Vol. '.$article['volume_number'] : '') . (isset($article['issue_number']) ? ', Núm. '.$article['issue_number'] : '');
@@ -102,7 +103,10 @@ class PDFGenerator {
         $pdf->SetSubject($subject);
 
         if (!empty($article['keywords'])) {
-            $pdf->SetKeywords(str_replace(['"', "'"], '', $article['keywords']));
+            $kwString = str_replace(';', ',', $article['keywords']);
+            $kws = array_map('trim', explode(',', $kwString));
+            $kws = array_filter(array_unique($kws));
+            $pdf->SetKeywords(str_replace(['"', "'"], '', implode(', ', $kws)));
         }
 
         // Layout
