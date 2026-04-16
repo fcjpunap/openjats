@@ -604,8 +604,15 @@ class JATSGenerator {
                 // Link interno -> xref
                 $rid = substr($href, 1);
                 $type = 'other';
-                if (strpos($rid, 'ref') !== false) $type = 'bibr';
-                elseif (strpos($rid, 'fn') !== false || strpos($rid, 'ftn') !== false) $type = 'fn';
+                if (strpos($rid, 'ref') !== false) {
+                    $type = 'bibr';
+                } elseif (strpos($rid, 'fn') !== false || strpos($rid, 'ftn') !== false) {
+                    $type = 'fn';
+                    // Normalizar IDs de notas: _ftn1, ftn1, fn1 -> fn-1
+                    if (preg_match('/^(?:_?ftn|fn)-?(\d+)$/i', $rid, $m)) {
+                        $rid = 'fn-' . $m[1];
+                    }
+                }
                 return "<xref ref-type=\"$type\" rid=\"$rid\">$text</xref>";
             } else {
                 // Link externo -> ext-link
@@ -798,12 +805,30 @@ class JATSGenerator {
         if (!empty($footnotes)) {
             $fnGroup = $dom->createElement('fn-group');
             foreach ($footnotes as $i => $fn) {
-                $fnEl = $dom->createElement('fn');
-                $fid = $fn['id'] ?? ('fn-' . ($i + 1));
-                // Limpiar prefijo # si viene del editor
+                // Determinar el ID: preferir fn_id (ej. _ftn1), luego id (PK), luego secuencial
+                $fid = $fn['fn_id'] ?? ($fn['id'] ?? ($i + 1));
+                
+                // Limpiar prefijo #
                 if (is_string($fid) && strpos($fid, '#') === 0) $fid = substr($fid, 1);
+                
+                // Normalizar IDs de notas: _ftn1, ftn1, fn1 -> fn-1
+                if (preg_match('/^(?:_?ftn|fn)-?(\d+)$/i', $fid, $m)) {
+                    $fid = 'fn-' . $m[1];
+                }
+                
+                // Asegurar que sea un XML ID válido (no puede empezar con número)
+                if (preg_match('/^\d/', $fid)) {
+                    $fid = 'fn-' . $fid;
+                }
+                
+                $fnEl = $dom->createElement('fn');
                 $fnEl->setAttribute('id', $fid);
-                $fnEl->appendChild($dom->createElement('p', htmlspecialchars($fn['content'] ?? '')));
+                $fnEl->setAttribute('fn-type', 'other');
+                
+                // El texto puede venir como 'text' (DB) o 'content' (Markup)
+                $content = $fn['text'] ?? ($fn['content'] ?? '');
+                $fnEl->appendChild($dom->createElement('p', htmlspecialchars($content)));
+                
                 $fnGroup->appendChild($fnEl);
             }
             $back->appendChild($fnGroup);

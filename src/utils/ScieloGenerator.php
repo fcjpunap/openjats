@@ -40,8 +40,13 @@ class ScieloGenerator {
         }
         if (empty($tables) && !empty($markupTables)) $tables = $markupTables;
         if (empty($authors) && !empty($md['authors'])) $authors = $md['authors'];
+        
+        // Carga de referencias con fallback a markup_data
         if (empty($references) && !empty($md['references'])) $references = $md['references'];
-        $footnotes = $md['footnotes'] ?? [];
+        
+        // Carga de notas al pie con fallback a markup_data
+        $footnotes = $this->articleModel->getFootnotes($articleId);
+        if (empty($footnotes) && !empty($md['footnotes'])) $footnotes = $md['footnotes'];
 
         if (empty($affiliations)) {
             $affiliations = $md['affiliations'] ?? [];
@@ -244,16 +249,22 @@ class ScieloGenerator {
         $h = preg_replace('/<i\s*[^>]*>(.*?)<\/i>/is', '<italic>$1</italic>', $h);
         $h = preg_replace('/<em\s*[^>]*>(.*?)<\/em>/is', '<italic>$1</italic>', $h);
         $h = preg_replace('/<u\s*[^>]*>(.*?)<\/u>/is', '<underline>$1</underline>', $h);
+        
         $h = preg_replace_callback('/<a\s+[^>]*href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/is', function($m) {
             $href = $m[1]; $text = $m[2];
             if (strpos($href, '#') === 0) {
                 $rid = substr($href, 1); $type = 'other';
-                if (strpos($rid, 'ref') !== false) $type = 'bibr';
-                elseif (strpos($rid, 'fn') !== false || strpos($rid, 'ftn') !== false) $type = 'fn';
+                if (strpos($rid, 'ref') !== false) {
+                    $type = 'bibr';
+                } elseif (strpos($rid, 'fn') !== false || strpos($rid, 'ftn') !== false) {
+                    $type = 'fn';
+                    if (preg_match('/^(?:_?ftn|fn)-?(\d+)$/i', $rid, $map)) $rid = 'fn-' . $map[1];
+                }
                 return "<xref ref-type=\"$type\" rid=\"$rid\">$text</xref>";
             }
             return "<ext-link ext-link-type=\"uri\" xlink:href=\"$href\">$text</ext-link>";
         }, $h);
+        
         $h = preg_replace('/<span\s*[^>]*>(.*?)<\/span>/is', '$1', $h);
         $m = ['&nbsp;'=>'&#160;', '&ndash;'=>'–', '&mdash;'=>'—', '&ldquo;'=>'"', '&rdquo;'=>'"', '&hellip;'=>'…', '&bull;'=>'•'];
         foreach ($m as $e => $c) $h = str_replace($e, $c, $h);
@@ -303,9 +314,19 @@ class ScieloGenerator {
         if (!empty($footnotes)) {
             $fnGroup = $dom->createElement('fn-group');
             foreach ($footnotes as $i => $fn) {
-                $fnEl = $dom->createElement('fn'); $fid = $fn['id'] ?? ('fn-' . ($i + 1));
+                // Normalización de IDs de notas para SciELO
+                $fid = $fn['fn_id'] ?? ($fn['id'] ?? ($i + 1));
                 if (is_string($fid) && strpos($fid, '#') === 0) $fid = substr($fid, 1);
-                $fnEl->setAttribute('id', $fid); $fnEl->appendChild($dom->createElement('p', htmlspecialchars($fn['content'] ?? ''))); $fnGroup->appendChild($fnEl);
+                if (preg_match('/^(?:_?ftn|fn)-?(\d+)$/i', $fid, $m)) $fid = 'fn-' . $m[1];
+                if (preg_match('/^\d/', $fid)) $fid = 'fn-' . $fid;
+                
+                $fnEl = $dom->createElement('fn');
+                $fnEl->setAttribute('id', $fid);
+                $fnEl->setAttribute('fn-type', 'other');
+                
+                $content = $fn['text'] ?? ($fn['content'] ?? '');
+                $fnEl->appendChild($dom->createElement('p', htmlspecialchars($content)));
+                $fnGroup->appendChild($fnEl);
             }
             $back->appendChild($fnGroup);
         }
