@@ -121,10 +121,35 @@ class JATSGenerator {
         $journalMeta = $this->createJournalMeta($dom, $journal);
         $front->appendChild($journalMeta);
         
+        // Autores: fallback a markup_data
+        if (empty($authors) && !empty($md['authors'])) {
+            $authors = $md['authors'];
+        }
+
+        // Affiliations: si están vacías, intentar extraer de los autores del markup
+        if (empty($affiliations)) {
+            $affiliations = $md['affiliations'] ?? [];
+            if (empty($affiliations) && !empty($authors)) {
+                $tempAffs = [];
+                foreach ($authors as &$author) {
+                    if (!empty($author['affiliation']) && empty($author['affiliation_id'])) {
+                        // Crear una afiliación virtual
+                        $affId = 'aff-' . crc32($author['affiliation']);
+                        $author['affiliation_id'] = $affId;
+                        $tempAffs[$affId] = [
+                            'affiliation_id' => $affId,
+                            'institution' => $author['affiliation']
+                        ];
+                    }
+                }
+                $affiliations = array_values($tempAffs);
+            }
+        }
+
         // Article metadata
         $articleMeta = $this->createArticleMeta($dom, $article, $authors, $affiliations);
         $front->appendChild($articleMeta);
-        
+
         // Figuras: usar markup_data si article_figures está vacía
         if (empty($figures) && !empty($markupFigures)) {
             $figures = $markupFigures;
@@ -243,10 +268,11 @@ class JATSGenerator {
         $title->appendChild($dom->createTextNode($article['title']));
         $titleGroup->appendChild($title);
         
-        if (!empty($article['title_en'])) {
+        $titleEn = $article['title_en'] ?? ($article['english_title'] ?? '');
+        if (!empty($titleEn)) {
             $transTitleGroup = $dom->createElement('trans-title-group');
             $transTitleGroup->setAttribute('xml:lang', 'en');
-            $transTitle = $dom->createElement('trans-title', htmlspecialchars($article['title_en']));
+            $transTitle = $dom->createElement('trans-title', htmlspecialchars($titleEn));
             $transTitleGroup->appendChild($transTitle);
             $titleGroup->appendChild($transTitleGroup);
         }
