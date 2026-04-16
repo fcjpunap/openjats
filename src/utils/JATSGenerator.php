@@ -587,8 +587,23 @@ class JATSGenerator {
         $html = preg_replace('/<em\s*[^>]*>(.*?)<\/em>/is', '<italic>$1</italic>', $html);
         $html = preg_replace('/<u\s*[^>]*>(.*?)<\/u>/is', '<underline>$1</underline>', $html);
         
-        // Conversión de links a ext-link
-        $html = preg_replace('/<a\s+[^>]*href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/is', '<ext-link ext-link-type="uri" xlink:href="$1">$2</ext-link>', $html);
+        // Conversión de links
+        $html = preg_replace_callback('/<a\s+[^>]*href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/is', function($matches) {
+            $href = $matches[1];
+            $text = $matches[2];
+            
+            if (strpos($href, '#') === 0) {
+                // Link interno -> xref
+                $rid = substr($href, 1);
+                $type = 'other';
+                if (strpos($rid, 'ref') !== false) $type = 'bibr';
+                elseif (strpos($rid, 'fn') !== false || strpos($rid, 'ftn') !== false) $type = 'fn';
+                return "<xref ref-type=\"$type\" rid=\"$rid\">$text</xref>";
+            } else {
+                // Link externo -> ext-link
+                return "<ext-link ext-link-type=\"uri\" xlink:href=\"$href\">$text</ext-link>";
+            }
+        }, $html);
         
         // Eliminar tags no permitidos (span, div, etc) pero conservar contenido
         $html = preg_replace('/<span\s*[^>]*>(.*?)<\/span>/is', '$1', $html);
@@ -679,7 +694,8 @@ class JATSGenerator {
         $tableWrap->appendChild($labelEl);
 
         $caption = $dom->createElement('caption');
-        $capText = $tableData['caption'] ?? ($tableData['title'] ?? '');
+        $capText = trim($tableData['caption'] ?? ($tableData['title'] ?? ''));
+        if ($capText === '') $capText = $tableData['label'] ?? 'Tabla';
         $caption->appendChild($dom->createElement('title', htmlspecialchars($capText)));
         $tableWrap->appendChild($caption);
 
@@ -749,8 +765,9 @@ class JATSGenerator {
         $fig->appendChild($labelEl);
 
         $caption = $dom->createElement('caption');
-        $title = $dom->createElement('title', htmlspecialchars($figData['alt'] ?? ($figData['caption'] ?? '')));
-        $caption->appendChild($title);
+        $capText = trim($figData['alt'] ?? ($figData['caption'] ?? ''));
+        if ($capText === '') $capText = $figData['label'] ?? 'Figura';
+        $caption->appendChild($dom->createElement('title', htmlspecialchars($capText)));
         $fig->appendChild($caption);
 
         $graphic = $dom->createElement('graphic');

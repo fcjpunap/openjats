@@ -57,13 +57,8 @@ class ScieloGenerator {
             }, $markupSections, array_keys($markupSections));
         }
 
-        if (empty($tables) && !empty($markupTables)) {
-            $tables = $markupTables;
-        }
-
-        if (empty($authors) && !empty($md['authors'])) {
-            $authors = $md['authors'];
-        }
+        if (empty($tables) && !empty($markupTables)) $tables = $markupTables;
+        if (empty($authors) && !empty($md['authors'])) $authors = $md['authors'];
 
         if (empty($affiliations)) {
             $affiliations = $md['affiliations'] ?? [];
@@ -117,6 +112,7 @@ class ScieloGenerator {
         $xmlPath = $articleDir . '/scielo.xml';
         file_put_contents($xmlPath, $xmlContent);
         
+        // Guardar en BD con el tipo estándar 'xml_jats'
         $this->articleModel->addFile(['article_id' => $articleId, 'file_type' => 'xml_jats', 'file_path' => $xmlPath, 'file_size' => strlen($xmlContent), 'mime_type' => 'application/xml']);
         
         return ['success' => true, 'file_path' => $xmlPath, 'download_url' => 'articles/' . $article['article_id'] . '/scielo.xml'];
@@ -281,7 +277,18 @@ class ScieloGenerator {
         $h = preg_replace('/<i\s*[^>]*>(.*?)<\/i>/is', '<italic>$1</italic>', $h);
         $h = preg_replace('/<em\s*[^>]*>(.*?)<\/em>/is', '<italic>$1</italic>', $h);
         $h = preg_replace('/<u\s*[^>]*>(.*?)<\/u>/is', '<underline>$1</underline>', $h);
-        $h = preg_replace('/<a\s+[^>]*href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/is', '<ext-link ext-link-type="uri" xlink:href="$1">$2</ext-link>', $h);
+        
+        $h = preg_replace_callback('/<a\s+[^>]*href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/is', function($matches) {
+            $href = $matches[1]; $text = $matches[2];
+            if (strpos($href, '#') === 0) {
+                $rid = substr($href, 1); $type = 'other';
+                if (strpos($rid, 'ref') !== false) $type = 'bibr';
+                elseif (strpos($rid, 'fn') !== false || strpos($rid, 'ftn') !== false) $type = 'fn';
+                return "<xref ref-type=\"$type\" rid=\"$rid\">$text</xref>";
+            }
+            return "<ext-link ext-link-type=\"uri\" xlink:href=\"$href\">$text</ext-link>";
+        }, $h);
+        
         $h = preg_replace('/<span\s*[^>]*>(.*?)<\/span>/is', '$1', $h);
         $m = ['&nbsp;'=>'&#160;', '&ndash;'=>'–', '&mdash;'=>'—', '&ldquo;'=>'"', '&rdquo;'=>'"', '&hellip;'=>'…', '&bull;'=>'•'];
         foreach ($m as $e => $c) $h = str_replace($e, $c, $h);
@@ -306,7 +313,10 @@ class ScieloGenerator {
         $d = null; foreach ($ts as $t) if (strcasecmp(trim($t['label'] ?? ''), $l) === 0) { $d=$t; break; }
         if (!$d) return; $tw = $dom->createElement('table-wrap'); $tw->setAttribute('id', 't-'.uniqid()); $p->appendChild($tw);
         $tw->appendChild($dom->createElement('label', htmlspecialchars($d['label'] ?? 'Tabla')));
-        $cap = $dom->createElement('caption'); $cap->appendChild($dom->createElement('title', htmlspecialchars($d['caption'] ?? ($d['title'] ?? '')))); $tw->appendChild($cap);
+        $cap = $dom->createElement('caption');
+        $capT = trim($d['caption'] ?? ($d['title'] ?? '')); if ($capT === '') $capT = $d['label'] ?? 'Tabla';
+        $cap->appendChild($dom->createElement('title', htmlspecialchars($capT)));
+        $tw->appendChild($cap);
         if (!empty($d['src']) && ($d['type'] ?? '') === 'image') {
             $g = $dom->createElement('graphic'); $g->setAttribute('xlink:href', htmlspecialchars($d['src'])); $tw->appendChild($g);
         } elseif (!empty($d['html'])) {
@@ -320,7 +330,10 @@ class ScieloGenerator {
         $d = null; foreach ($fs as $f) if (strcasecmp(trim($f['label'] ?? ''), $l) === 0) { $d=$f; break; }
         if (!$d) return; $fig = $dom->createElement('fig'); $fig->setAttribute('id', 'f-'.uniqid()); $p->appendChild($fig);
         $fig->appendChild($dom->createElement('label', htmlspecialchars($d['label'] ?? 'Figura')));
-        $cap = $dom->createElement('caption'); $cap->appendChild($dom->createElement('title', htmlspecialchars($d['alt'] ?? ($d['caption'] ?? '')))); $fig->appendChild($cap);
+        $cap = $dom->createElement('caption'); 
+        $capT = trim($d['alt'] ?? ($d['caption'] ?? '')); if ($capT === '') $capT = $d['label'] ?? 'Figura';
+        $cap->appendChild($dom->createElement('title', htmlspecialchars($capT)));
+        $fig->appendChild($cap);
         $g = $dom->createElement('graphic'); $g->setAttribute('xlink:href', htmlspecialchars($d['src'] ?? '')); $fig->appendChild($g);
         if (!empty($d['nota'])) $fig->appendChild($dom->createElement('p', 'Nota. ' . htmlspecialchars($d['nota'])));
     }
