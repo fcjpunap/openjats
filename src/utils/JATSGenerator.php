@@ -515,39 +515,35 @@ class JATSGenerator {
 
     /**
      * Divide el HTML del editor en bloques de párrafo individuales
-     * Evita romper párrafos por saltos de línea simples (hard returns)
+     * Solo separa por etiquetas de bloque reales, tratando saltos de línea como espacios
      */
     private function extractParagraphsFromHtml(string $html): array {
-        // Normalizar saltos de línea
-        $html = str_replace(["\r\n", "\r"], "\n", $html);
+        // Normalizar saltos de línea a espacios (evita el line-by-line split)
+        $html = str_replace(["\r\n", "\r", "\n"], " ", $html);
         
-        // Separador temporal para bloques reales
+        // Separador temporal para bloques reales (solo etiquetas)
         $break = '||PARBREAK||';
         
-        // 1. Cierres de etiquetas de bloque son separadores claros
-        $html = preg_replace('/<\/(p|div|li|h[1-6])>/i', $break, $html);
+        // Cierres de etiquetas de bloque son los únicos separadores permitidos
+        $html = preg_replace('/<\/(p|div|li|h[1-6]|blockquote)>/i', $break, $html);
         
-        // 2. Dobles saltos de línea o más son separadores
-        $html = preg_replace('/\n{2,}/', $break, $html);
-        
-        // 3. Br dobles son separadores
+        // Caso especial: múltiples <br> seguidos pueden ser intención de párrafo nuevo
         $html = preg_replace('/(<br\s*\/?>\s*){2,}/i', $break, $html);
         
-        // Limpiar aperturas de etiquetas de bloque que quedaron
-        $html = preg_replace('/<(p|div|ul|ol|li|h[1-6])[^>]*>/i', '', $html);
+        // Limpiar aperturas de etiquetas de bloque
+        $html = preg_replace('/<(p|div|ul|ol|li|h[1-6]|blockquote)[^>]*>/i', '', $html);
         
         // Dividir por el marcador
-        $lines = explode($break, $html);
+        $chunks = explode($break, $html);
         $result = [];
         
-        foreach ($lines as $line) {
-            // Reemplazar saltos de línea internos y múltiples espacios por un espacio simple
-            // Esto arregla el problema de "párrafos separados entre líneas"
-            $line = preg_replace('/\s+/', ' ', $line);
-            $line = trim($line);
+        foreach ($chunks as $chunk) {
+            // Colapsar múltiples espacios (incluyendo los que eran saltos de línea)
+            $chunk = preg_replace('/\s+/', ' ', $chunk);
+            $chunk = trim($chunk);
             
-            if ($line !== '') {
-                $result[] = $line;
+            if ($chunk !== '') {
+                $result[] = $chunk;
             }
         }
         return $result;
