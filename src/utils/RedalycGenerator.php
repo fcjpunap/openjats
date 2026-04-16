@@ -25,7 +25,7 @@ class RedalycGenerator {
             throw new Exception("Artículo no encontrado");
         }
         
-        // Obtener datos iniciales
+        // Obtener todos los datos del artículo
         $authors = $this->articleModel->getAuthors($articleId);
         $affiliations = $this->articleModel->getAffiliations($articleId);
         $sections = $this->articleModel->getSections($articleId);
@@ -33,9 +33,10 @@ class RedalycGenerator {
         $figures = $this->articleModel->getFigures($articleId);
         $references = $this->articleModel->getReferences($articleId);
         
+        // Obtener información de la revista
         $journal = $this->getJournalInfo($article);
         
-        // Markup data fallback
+        // Obtener markup data
         $markup = $this->articleModel->getMarkup($articleId);
         $md = ($markup && isset($markup['markup_data'])) ? $markup['markup_data'] : [];
         $markupTables  = $md['tables'] ?? [];
@@ -53,18 +54,7 @@ class RedalycGenerator {
             }, $markupSections, array_keys($markupSections));
         }
 
-        if (empty($tables) && !empty($markupTables)) {
-            $tables = $markupTables;
-        } elseif (!empty($markupTables)) {
-            $indexed = []; foreach($markupTables as $mt) $indexed[strtolower(trim($mt['label'] ?? ''))] = $mt;
-            $merged = []; foreach($tables as $t) $merged[] = $indexed[strtolower(trim($t['label'] ?? ''))] ?? $t;
-            foreach($markupTables as $mt) {
-                $found = false; foreach($merged as $m) if(strtolower(trim($m['label'] ?? '')) === strtolower(trim($mt['label'] ?? ''))) { $found=true; break; }
-                if(!$found) $merged[] = $mt;
-            }
-            $tables = $merged;
-        }
-
+        if (empty($tables) && !empty($markupTables)) $tables = $markupTables;
         if (empty($authors) && !empty($md['authors'])) $authors = $md['authors'];
         
         if (empty($affiliations)) {
@@ -142,22 +132,14 @@ class RedalycGenerator {
         return $jm;
     }
     
-    private function createArticleMeta($dom, $article, $authors, $affiliations) {
+    private function createArticleMeta($dom, $article, $authors, $affs) {
         $am = $dom->createElement('article-meta');
         $am->appendChild($dom->createElement('article-id', htmlspecialchars($article['article_id'])))->setAttribute('pub-id-type', 'publisher-id');
         if (!empty($article['doi'])) $am->appendChild($dom->createElement('article-id', htmlspecialchars($article['doi'])))->setAttribute('pub-id-type', 'doi');
         
-        if (!empty($article['article_type'])) {
-            $cat = $dom->createElement('article-categories');
-            $sg = $dom->createElement('subj-group'); $sg->setAttribute('subj-group-type', 'heading');
-            $sg->appendChild($dom->createElement('subject', htmlspecialchars($article['article_type'])));
-            $cat->appendChild($sg); $am->appendChild($cat);
-        }
-        
         $tg = $dom->createElement('title-group');
         $tit = $dom->createElement('article-title'); $tit->appendChild($dom->createTextNode($article['title']));
         $tg->appendChild($tit);
-        
         $titleEn = $article['title_en'] ?? ($article['english_title'] ?? '');
         if (!empty($titleEn)) {
             $ttg = $dom->createElement('trans-title-group'); $ttg->setAttribute('xml:lang', 'en');
@@ -165,13 +147,12 @@ class RedalycGenerator {
             $tg->appendChild($ttg);
         }
         $am->appendChild($tg);
-        $am->appendChild($this->createContribGroup($dom, $authors, $affiliations));
-        foreach ($affiliations as $aff) $am->appendChild($this->createAffiliation($dom, $aff));
+        $am->appendChild($this->createContribGroup($dom, $authors, $affs));
+        foreach ($affs as $aff) $am->appendChild($this->createAffiliation($dom, $aff));
         
         if (!empty($article['published_date'])) {
             $pd = $dom->createElement('pub-date'); $pd->setAttribute('pub-type', 'epub'); $pd->setAttribute('date-type', 'pub'); $pd->setAttribute('publication-format', 'electronic');
-            $this->addDateElements($dom, $pd, $article['published_date']);
-            $am->appendChild($pd);
+            $this->addDateElements($dom, $pd, $article['published_date']); $am->appendChild($pd);
         }
         
         if (!empty($article['volume_number'])) $am->appendChild($dom->createElement('volume', htmlspecialchars($article['volume_number'])));
@@ -191,12 +172,12 @@ class RedalycGenerator {
         
         if (!empty($article['keywords'])) {
             $kg = $dom->createElement('kwd-group'); $kg->setAttribute('xml:lang', 'es');
-            foreach(explode(',', $article['keywords']) as $k) $kg->appendChild($dom->createElement('kwd', htmlspecialchars(trim($k))));
+            foreach (explode(',', $article['keywords']) as $k) $kg->appendChild($dom->createElement('kwd', htmlspecialchars(trim($k))));
             $am->appendChild($kg);
         }
         if (!empty($article['keywords_en'])) {
             $kg = $dom->createElement('kwd-group'); $kg->setAttribute('xml:lang', 'en');
-            foreach(explode(',', $article['keywords_en']) as $k) $kg->appendChild($dom->createElement('kwd', htmlspecialchars(trim($k))));
+            foreach (explode(',', $article['keywords_en']) as $k) $kg->appendChild($dom->createElement('kwd', htmlspecialchars(trim($k))));
             $am->appendChild($kg);
         }
         return $am;
@@ -228,7 +209,7 @@ class RedalycGenerator {
     
     private function createBody($dom, $sections, $tables, $figures) {
         $b = $dom->createElement('body');
-        foreach ($sections as $sec) $b->appendChild($this->createSection($dom, $sec, $tables, $figures));
+        foreach ($sections as $s) $b->appendChild($this->createSection($dom, $s, $tables, $figures));
         return $b;
     }
     
@@ -249,13 +230,10 @@ class RedalycGenerator {
                 $curP = null;
                 foreach ($parts as $part) {
                     if ($part === '') continue;
-                    $cp = trim(strip_tags($part));
-                    if (preg_match('/^\[(Tabla|Table)\s*([^\]]+)\]$/i', $cp, $m)) {
+                    if (preg_match('/^\[(Tabla|Table|Figura|Figure)\s*([^\]]+)\]$/i', trim(strip_tags($part)), $m)) {
                         if ($curP) { $s->appendChild($curP); $curP = null; }
-                        $this->appendTableByLabel($dom, $s, trim($m[1] . ' ' . $m[2]), $tables);
-                    } elseif (preg_match('/^\[(Figura|Figure)\s*([^\]]+)\]$/i', $cp, $m)) {
-                        if ($curP) { $s->appendChild($curP); $curP = null; }
-                        $this->appendFigureByLabel($dom, $s, trim($m[1] . ' ' . $m[2]), $figures);
+                        if (stripos($m[1], 'Tab') !== false) $this->appendTableByLabel($dom, $s, trim($m[1] . ' ' . $m[2]), $tables);
+                        else $this->appendFigureByLabel($dom, $s, trim($m[1] . ' ' . $m[2]), $figures);
                     } else {
                         if (!$curP) $curP = $dom->createElement('p');
                         $txt = $this->htmlToXmlFragment($part);
@@ -272,27 +250,39 @@ class RedalycGenerator {
         return $s;
     }
 
-    private function extractParagraphsFromHtml(string $html): array {
-        $html = str_replace(["\r\n", "\r", "\n"], " ", $html); $break = '||PARBREAK||';
-        $html = preg_replace('/<\/(p|div|li|h[1-6]|blockquote)>/i', $break, $html);
-        $html = preg_replace('/(<br\s*\/?>\s*){2,}/i', $break, $html);
-        $html = preg_replace('/<(p|div|ul|ol|li|h[1-6]|blockquote)[^>]*>/i', '', $html);
-        $chunks = explode($break, $html); $res = [];
+    private function extractParagraphsFromHtml(string $h): array {
+        $h = str_replace(["\r\n", "\r", "\n"], " ", $h);
+        $h = preg_replace('/<\/(p|div|li|h[1-6]|blockquote)>/i', '||PARBREAK||', $h);
+        $h = preg_replace('/(<br\s*\/?>\s*){2,}/i', '||PARBREAK||', $h);
+        $h = preg_replace('/<(p|div|ul|ol|li|h[1-6]|blockquote)[^>]*>/i', '', $h);
+        $chunks = explode('||PARBREAK||', $h); $res = [];
         foreach ($chunks as $c) { $c = trim(preg_replace('/\s+/', ' ', $c)); if ($c !== '') $res[] = $c; }
         return $res;
     }
 
     private function htmlToXmlFragment(string $h): string {
-        $m = ['&nbsp;'=>'&#160;', '&ndash;'=>'–', '&mdash;'=>'—', '&ldquo;'=>'"', '&rdquo;'=>'"'];
+        $h = preg_replace('/<b\s*[^>]*>(.*?)<\/b>/is', '<bold>$1</bold>', $h);
+        $h = preg_replace('/<strong\s*[^>]*>(.*?)<\/strong>/is', '<bold>$1</bold>', $h);
+        $h = preg_replace('/<i\s*[^>]*>(.*?)<\/i>/is', '<italic>$1</italic>', $h);
+        $h = preg_replace('/<em\s*[^>]*>(.*?)<\/em>/is', '<italic>$1</italic>', $h);
+        $h = preg_replace('/<u\s*[^>]*>(.*?)<\/u>/is', '<underline>$1</underline>', $h);
+        $h = preg_replace('/<a\s+[^>]*href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/is', '<ext-link ext-link-type="uri" xlink:href="$1">$2</ext-link>', $h);
+        $h = preg_replace('/<span\s*[^>]*>(.*?)<\/span>/is', '$1', $h);
+        $m = ['&nbsp;'=>'&#160;', '&ndash;'=>'–', '&mdash;'=>'—', '&ldquo;'=>'"', '&rdquo;'=>'"', '&hellip;'=>'…', '&bull;'=>'•'];
         foreach ($m as $e => $c) $h = str_replace($e, $c, $h);
         $h = html_entity_decode($h, ENT_HTML5 | ENT_QUOTES, 'UTF-8');
-        return preg_replace('/&(?!(?:[a-zA-Z]+|#\d+|#x[0-9a-fA-F]+);)/', '&amp;', $h);
+        $h = preg_replace('/\s+(style|class|align|lang|xml:lang|data-[a-z0-9\-]+)="[^"]*"/i', '', $h);
+        $h = preg_replace('/<(bold|italic|underline|sub|sup|p)\s+[^>]*>/i', '<$1>', $h);
+        $h = preg_replace('/&(?!(?:[a-zA-Z]+|#\d+|#x[0-9a-fA-F]+);)/', '&amp;', $h);
+        return strip_tags($h, '<bold><italic><underline><sub><sup><xref><ext-link><p>');
     }
 
     private function tableHtmlToXml(string $h): string {
-        $h = preg_replace('/\s+(style|class|id)="[^"]*"/i', '', $h);
+        $h = preg_replace('/\s+(style|class|id|align|valign|width|height|border|cellspacing|cellpadding|data-[a-z0-9\-]+)="[^"]*"/i', '', $h);
         libxml_use_internal_errors(true); $tD = new DOMDocument('1.0', 'UTF-8');
         $tD->loadHTML('<?xml encoding="UTF-8">' . $h, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        $xpath = new DOMXPath($tD);
+        foreach ($xpath->query('//@*') as $n) if (!in_array($n->nodeName, ['colspan', 'rowspan'])) $n->parentNode->removeAttribute($n->nodeName);
         libxml_clear_errors(); $tags = $tD->getElementsByTagName('table');
         return $tags->length > 0 ? $tD->saveXML($tags->item(0)) : '';
     }
@@ -301,7 +291,7 @@ class RedalycGenerator {
         $d = null; foreach ($ts as $t) if (strcasecmp(trim($t['label'] ?? ''), $l) === 0) { $d=$t; break; }
         if (!$d) return; $tw = $dom->createElement('table-wrap'); $tw->setAttribute('id', 't-'.uniqid()); $p->appendChild($tw);
         $tw->appendChild($dom->createElement('label', htmlspecialchars($d['label'] ?? 'Tabla')));
-        $cap = $dom->createElement('caption'); $cap->appendChild($dom->createElement('p', htmlspecialchars($d['caption'] ?? ($d['title'] ?? '')))); $tw->appendChild($cap);
+        $cap = $dom->createElement('caption'); $cap->appendChild($dom->createElement('title', htmlspecialchars($d['caption'] ?? ($d['title'] ?? '')))); $tw->appendChild($cap);
         if (!empty($d['src']) && ($d['type'] ?? '') === 'image') {
             $g = $dom->createElement('graphic'); $g->setAttribute('xlink:href', htmlspecialchars($d['src'])); $tw->appendChild($g);
         } elseif (!empty($d['html'])) {
@@ -314,7 +304,7 @@ class RedalycGenerator {
         $d = null; foreach ($fs as $f) if (strcasecmp(trim($f['label'] ?? ''), $l) === 0) { $d=$f; break; }
         if (!$d) return; $fig = $dom->createElement('fig'); $fig->setAttribute('id', 'f-'.uniqid()); $p->appendChild($fig);
         $fig->appendChild($dom->createElement('label', htmlspecialchars($d['label'] ?? 'Figura')));
-        $cap = $dom->createElement('caption'); $cap->appendChild($dom->createElement('p', htmlspecialchars($d['alt'] ?? ($d['caption'] ?? '')))); $fig->appendChild($cap);
+        $cap = $dom->createElement('caption'); $cap->appendChild($dom->createElement('title', htmlspecialchars($d['alt'] ?? ($d['caption'] ?? '')))); $fig->appendChild($cap);
         $g = $dom->createElement('graphic'); $g->setAttribute('xlink:href', htmlspecialchars($d['src'] ?? '')); $fig->appendChild($g);
     }
 

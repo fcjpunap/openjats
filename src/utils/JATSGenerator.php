@@ -580,29 +580,49 @@ class JATSGenerator {
      * Convierte entidades HTML (&nbsp; etc.) a sus equivalentes Unicode.
      */
     private function htmlToXmlFragment(string $html): string {
-        // Reemplazar entidades HTML frecuentes antes de decodificar
+        // Conversión de etiquetas HTML a JATS
+        $html = preg_replace('/<b\s*[^>]*>(.*?)<\/b>/is', '<bold>$1</bold>', $html);
+        $html = preg_replace('/<strong\s*[^>]*>(.*?)<\/strong>/is', '<bold>$1</bold>', $html);
+        $html = preg_replace('/<i\s*[^>]*>(.*?)<\/i>/is', '<italic>$1</italic>', $html);
+        $html = preg_replace('/<em\s*[^>]*>(.*?)<\/em>/is', '<italic>$1</italic>', $html);
+        $html = preg_replace('/<u\s*[^>]*>(.*?)<\/u>/is', '<underline>$1</underline>', $html);
+        
+        // Conversión de links a ext-link
+        $html = preg_replace('/<a\s+[^>]*href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/is', '<ext-link ext-link-type="uri" xlink:href="$1">$2</ext-link>', $html);
+        
+        // Eliminar tags no permitidos (span, div, etc) pero conservar contenido
+        $html = preg_replace('/<span\s*[^>]*>(.*?)<\/span>/is', '$1', $html);
+        
+        // Entidades
         $map = [
             '&nbsp;'   => '&#160;',
             '&ndash;'  => '–',
             '&mdash;'  => '—',
             '&ldquo;'  => '"',
             '&rdquo;'  => '"',
-            '&lsquo;'  => "\u{2018}",
-            '&rsquo;'  => "\u{2019}",
             '&hellip;' => '…',
             '&bull;'   => '•',
-            '&copy;'   => '©',
-            '&reg;'    => '®',
-            '&trade;'  => '™',
-            '&deg;'    => '°',
         ];
         foreach ($map as $entity => $char) {
             $html = str_replace($entity, $char, $html);
         }
-        // Decodificar cualquier entidad named restante a UTF-8
+        
         $html = html_entity_decode($html, ENT_HTML5 | ENT_QUOTES, 'UTF-8');
-        // Re-escapar & sueltos que no sean entidades XML
+        
+        // Eliminar atributos residuales en tags que dejamos (xml:lang, style, class, align)
+        $html = preg_replace('/\s+(style|class|align|lang|xml:lang|data-[a-z0-9\-]+)="[^"]*"/i', '', $html);
+        
+        // Limpiar tags permitidos (quitar cualquier atributo que haya quedado)
+        // Nota: <ext-link> y <xref> necesitan sus atributos, así que los protegemos
+        $html = preg_replace('/<(bold|italic|underline|sub|sup|p)\s+[^>]*>/i', '<$1>', $html);
+
+        // Re-escapar & sueltos
         $html = preg_replace('/&(?!(?:[a-zA-Z]+|#\d+|#x[0-9a-fA-F]+);)/', '&amp;', $html);
+        
+        // Finalmente strip de cualquier otra etiqueta HTML no deseada
+        $allowed = '<bold><italic><underline><sub><sup><xref><ext-link><p>';
+        $html = strip_tags($html, $allowed);
+        
         return $html;
     }
 
@@ -610,9 +630,8 @@ class JATSGenerator {
      * Convierte HTML de tabla a XML válido usando DOMDocument como parser intermedio
      */
     private function tableHtmlToXml(string $html): string {
-        $html = preg_replace('/\s+style="[^"]*"/i', '', $html);
-        $html = preg_replace('/\s+class="[^"]*"/i', '', $html);
-        $html = preg_replace('/\s+id="[^"]*"/i', '', $html);
+        // Limpieza agresiva de atributos HTML para SciELO
+        $html = preg_replace('/\s+(style|class|id|align|valign|width|height|border|cellspacing|cellpadding|data-[a-z0-9\-]+)="[^"]*"/i', '', $html);
 
         libxml_use_internal_errors(true);
         $tmpDom = new DOMDocument('1.0', 'UTF-8');
@@ -624,7 +643,18 @@ class JATSGenerator {
 
         $tableTags = $tmpDom->getElementsByTagName('table');
         if ($tableTags->length === 0) return '';
-        return $tmpDom->saveXML($tableTags->item(0));
+        
+        $tableNode = $tableTags->item(0);
+        // Limpiar atributos de todos los descendientes (tr, td, th)
+        $xpath = new DOMXPath($tmpDom);
+        $nodes = $xpath->query('//@*');
+        foreach ($nodes as $node) {
+            if (!in_array($node->nodeName, ['colspan', 'rowspan'])) {
+                $node->parentNode->removeAttribute($node->nodeName);
+            }
+        }
+        
+        return $tmpDom->saveXML($tableNode);
     }
 
     /**
@@ -650,7 +680,7 @@ class JATSGenerator {
 
         $caption = $dom->createElement('caption');
         $capText = $tableData['caption'] ?? ($tableData['title'] ?? '');
-        $caption->appendChild($dom->createElement('p', htmlspecialchars($capText)));
+        $caption->appendChild($dom->createElement('title', htmlspecialchars($capText)));
         $tableWrap->appendChild($caption);
 
         if (!empty($tableData['src']) && ($tableData['type'] ?? '') === 'image') {
@@ -719,8 +749,8 @@ class JATSGenerator {
         $fig->appendChild($labelEl);
 
         $caption = $dom->createElement('caption');
-        $p = $dom->createElement('p', htmlspecialchars($figData['alt'] ?? ($figData['caption'] ?? '')));
-        $caption->appendChild($p);
+        $title = $dom->createElement('title', htmlspecialchars($figData['alt'] ?? ($figData['caption'] ?? '')));
+        $caption->appendChild($title);
         $fig->appendChild($caption);
 
         $graphic = $dom->createElement('graphic');
