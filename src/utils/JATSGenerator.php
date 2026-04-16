@@ -36,13 +36,58 @@ class JATSGenerator {
         // Obtener información de la revista
         $journal = $this->getJournalInfo($article);
         
-        // Obtener markup data (si existe) para tablas/figuras
+        // Obtener markup data (si existe) para tablas/figuras/secciones
         $markup = $this->articleModel->getMarkup($articleId);
-        $markupTables = [];
+        $markupTables  = [];
         $markupFigures = [];
+        $markupSections = [];
         if ($markup && isset($markup['markup_data'])) {
-            $markupTables = $markup['markup_data']['tables'] ?? [];
-            $markupFigures = $markup['markup_data']['images'] ?? [];
+            $md = $markup['markup_data'];
+            $markupTables   = $md['tables']    ?? [];
+            $markupFigures  = $md['images']    ?? [];
+            $markupSections = $md['sections']  ?? [];
+        }
+
+        // Fallback: si article_sections está vacía usa las del markup_data
+        if (empty($sections) && !empty($markupSections)) {
+            $sections = array_map(function($s, $i) {
+                return [
+                    'section_id'   => 'sec-' . ($i + 1),
+                    'section_type' => $s['type']      ?? 'other',
+                    'title'        => $s['type_name'] ?? ($s['title'] ?? ''),
+                    'content'      => $s['content']   ?? '',
+                    'level'        => $s['level']      ?? 1,
+                    'section_order'=> $i + 1,
+                ];
+            }, $markupSections, array_keys($markupSections));
+        }
+
+        // Fallback: si las tablas de BD están vacías usa las del markup_data
+        if (empty($tables) && !empty($markupTables)) {
+            $tables = $markupTables;
+        }
+        // Usar siempre las tablas del markup (tienen el HTML actualizado)
+        if (!empty($markupTables)) {
+            $markupTablesIndexed = [];
+            foreach ($markupTables as $mt) {
+                $markupTablesIndexed[strtolower(trim($mt['label'] ?? ''))] = $mt;
+            }
+            // Combinar: markup_data tiene prioridad sobre article_tables
+            $mergedTables = [];
+            foreach ($tables as $t) {
+                $key = strtolower(trim($t['label'] ?? ''));
+                $mergedTables[] = $markupTablesIndexed[$key] ?? $t;
+            }
+            // Añadir tablas del markup que no estén en article_tables
+            foreach ($markupTables as $mt) {
+                $key = strtolower(trim($mt['label'] ?? ''));
+                $found = false;
+                foreach ($mergedTables as $m) {
+                    if (strtolower(trim($m['label'] ?? '')) === $key) { $found = true; break; }
+                }
+                if (!$found) $mergedTables[] = $mt;
+            }
+            $tables = $mergedTables;
         }
         
         // Crear documento XML
@@ -80,8 +125,13 @@ class JATSGenerator {
         $articleMeta = $this->createArticleMeta($dom, $article, $authors, $affiliations);
         $front->appendChild($articleMeta);
         
-        // Body
-        $body = $this->createBody($dom, $sections, $markupTables, $markupFigures);
+        // Figuras: usar markup_data si article_figures está vacía
+        if (empty($figures) && !empty($markupFigures)) {
+            $figures = $markupFigures;
+        }
+
+        // Body - pasar $tables (ya merged con markup) y $figures
+        $body = $this->createBody($dom, $sections, $tables, $figures);
         $articleElement->appendChild($body);
         
         // Back matter (referencias)
@@ -378,79 +428,167 @@ class JATSGenerator {
         
         return $body;
     }
-    
+
     /**
-     * Crear sección
+     * Crear sección con soporte de múltiples párrafos HTML del editor
      */
     private function createSection($dom, $section, $tables, $figures) {
         $sec = $dom->createElement('sec');
         $sec->setAttribute('id', $section['section_id']);
-        
+
         if (!empty($section['title'])) {
             $title = $dom->createElement('title', htmlspecialchars($section['title']));
             $sec->appendChild($title);
         }
-        
+
         if (!empty($section['content'])) {
-            $content = $section['content'];
-            
-            // Regex para detectar etiquetas de posición [Tabla X] o [Figura X]
-            // Soportamos variaciones de espacios y mayúsculas
-            $pattern = '/(\[(?:Tabla|Figura|Table|Figure)\s*[^\]]+\])/i';
-            $parts = preg_split($pattern, $content, -1, PREG_SPLIT_DELIM_CAPTURE);
-            
-            $currentP = null;
-            
-            foreach ($parts as $part) {
-                if (empty($part)) continue;
-                
-                // Limpiar el tag de span si viene del editor visual
-                $cleanPart = strip_tags($part);
-                
-                if (preg_match('/^\[(Tabla|Table)\s*([^\]]+)\]$/i', $cleanPart, $matches)) {
-                    $labelToFind = trim($matches[1] . ' ' . $matches[2]);
-                    $this->appendTableByLabel($dom, $sec, $labelToFind, $tables);
-                    $currentP = null;
-                } elseif (preg_match('/^\[(Figura|Figure)\s*([^\]]+)\]$/i', $cleanPart, $matches)) {
-                    $labelToFind = trim($matches[1] . ' ' . $matches[2]);
-                    $this->appendFigureByLabel($dom, $sec, $labelToFind, $figures);
-                    $currentP = null;
-                } else {
-                    // Texto normal o con formato básico
-                    if (!$currentP) {
-                        $currentP = $dom->createElement('p');
-                        $sec->appendChild($currentP);
+            // Dividir el contenido HTML del editor en bloques de párrafo
+            $blocks = $this->extractParagraphsFromHtml($section['content']);
+
+            foreach ($blocks as $block) {
+                if (empty(trim($block))) continue;
+
+                $cleanBlock = trim(strip_tags($block));
+
+                // ¿Es solo un placeholder [Tabla X] o [Figura X]?
+                if (preg_match('/^\[(Tabla|Table)\s*([^\]]+)\]$/i', $cleanBlock, $matches)) {
+                    $this->appendTableByLabel($dom, $sec, trim($matches[1] . ' ' . $matches[2]), $tables);
+                    continue;
+                }
+                if (preg_match('/^\[(Figura|Figure)\s*([^\]]+)\]$/i', $cleanBlock, $matches)) {
+                    $this->appendFigureByLabel($dom, $sec, trim($matches[1] . ' ' . $matches[2]), $figures);
+                    continue;
+                }
+
+                // El bloque puede contener texto Y placeholders intercalados
+                $pattern = '/(\[(?:Tabla|Figura|Table|Figure)\s*[^\]]+\])/i';
+                $parts = preg_split($pattern, $block, -1, PREG_SPLIT_DELIM_CAPTURE);
+
+                $currentP = null;
+
+                foreach ($parts as $part) {
+                    if ($part === '' || $part === null) continue;
+                    $cleanPart = trim(strip_tags($part));
+
+                    if (preg_match('/^\[(Tabla|Table)\s*([^\]]+)\]$/i', $cleanPart, $m)) {
+                        if ($currentP) { $sec->appendChild($currentP); $currentP = null; }
+                        $this->appendTableByLabel($dom, $sec, trim($m[1] . ' ' . $m[2]), $tables);
+                    } elseif (preg_match('/^\[(Figura|Figure)\s*([^\]]+)\]$/i', $cleanPart, $m)) {
+                        if ($currentP) { $sec->appendChild($currentP); $currentP = null; }
+                        $this->appendFigureByLabel($dom, $sec, trim($m[1] . ' ' . $m[2]), $figures);
+                    } else {
+                        if (!$currentP) {
+                            $currentP = $dom->createElement('p');
+                        }
+                        $text = $part;
+                        // Convertir <a data-fnid> a <xref ref-type="fn">
+                        $text = preg_replace('/<a\s[^>]*data-fnid=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/is',
+                            '<xref ref-type="fn" rid="$1">$2</xref>', $text);
+                        // Convertir <a data-refid> / <a data-rid> a <xref ref-type="bibr">
+                        $text = preg_replace('/<a\s[^>]*data-(?:refid|rid)=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/is',
+                            '<xref ref-type="bibr" rid="$1">$2</xref>', $text);
+                        $text = strip_tags($text, '<b><i><u><sub><sup><xref>');
+                        $text = $this->htmlToXmlFragment($text);
+
+                        if (trim($text) !== '') {
+                            $frag = $dom->createDocumentFragment();
+                            libxml_use_internal_errors(true);
+                            $ok = @$frag->appendXML($text);
+                            libxml_clear_errors();
+                            if ($ok !== false) {
+                                $currentP->appendChild($frag);
+                            } else {
+                                $currentP->appendChild($dom->createTextNode($cleanPart));
+                            }
+                        }
                     }
-                    
-                    // Importar HTML básico (b, i, u, sub, sup) y convertir <a> a <xref>
-                    $textToImport = $part;
-                    
-                    // Footnotes: <a href="#fn-1" data-fnid="fn-1">...</a> -> <xref ref-type="fn" rid="fn-1">...</xref>
-                    $textToImport = preg_replace('/<a\s+[^>]*data-fnid=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/i', '<xref ref-type="fn" rid="$1">$2</xref>', $textToImport);
-                    
-                    // References: <a href="#ref-1" data-refid="ref-1" ...>...</a> -> <xref ref-type="bibr" rid="ref-1">...</xref>
-                    $textToImport = preg_replace('/<a\s+[^>]*data-refid=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/i', '<xref ref-type="bibr" rid="$1">$2</xref>', $textToImport);
-                    
-                    $allowedTags = '<b><i><u><sub><sup><xref>';
-                    $fragment = $dom->createDocumentFragment();
-                    $textToImport = strip_tags($textToImport, $allowedTags);
-                    
-                    // Asegurarnos de que sea XML válido para appendXML
-                    try {
-                        @$fragment->appendXML($textToImport);
-                        $currentP->appendChild($fragment);
-                    } catch (Exception $e) {
-                        $currentP->appendChild($dom->createTextNode($cleanPart));
-                    }
+                }
+
+                if ($currentP && $currentP->hasChildNodes()) {
+                    $sec->appendChild($currentP);
                 }
             }
         }
-        
+
         return $sec;
     }
 
     /**
-     * Insertar tabla por etiqueta (Ej: Tabla 1)
+     * Divide el HTML del editor en bloques de párrafo individuales
+     */
+    private function extractParagraphsFromHtml(string $html): array {
+        // Convertir <br> a salto de línea
+        $html = preg_replace('/<br\s*\/?>/i', "\n", $html);
+        // Convertir cierre de bloque a salto de línea
+        $html = preg_replace('/<\/(p|div|li|h[1-6])>/i', "\n", $html);
+        // Eliminar apertura de etiquetas de bloque
+        $html = preg_replace('/<(p|div|ul|ol|li|h[1-6])[^>]*>/i', '', $html);
+        // Dividir por líneas
+        $lines = preg_split('/\n+/', $html);
+        $result = [];
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line !== '') {
+                $result[] = $line;
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * Normaliza un fragmento HTML inline para que sea XML válido.
+     * Convierte entidades HTML (&nbsp; etc.) a sus equivalentes Unicode.
+     */
+    private function htmlToXmlFragment(string $html): string {
+        // Reemplazar entidades HTML frecuentes antes de decodificar
+        $map = [
+            '&nbsp;'   => '&#160;',
+            '&ndash;'  => '–',
+            '&mdash;'  => '—',
+            '&ldquo;'  => '"',
+            '&rdquo;'  => '"',
+            '&lsquo;'  => "\u{2018}",
+            '&rsquo;'  => "\u{2019}",
+            '&hellip;' => '…',
+            '&bull;'   => '•',
+            '&copy;'   => '©',
+            '&reg;'    => '®',
+            '&trade;'  => '™',
+            '&deg;'    => '°',
+        ];
+        foreach ($map as $entity => $char) {
+            $html = str_replace($entity, $char, $html);
+        }
+        // Decodificar cualquier entidad named restante a UTF-8
+        $html = html_entity_decode($html, ENT_HTML5 | ENT_QUOTES, 'UTF-8');
+        // Re-escapar & sueltos que no sean entidades XML
+        $html = preg_replace('/&(?!(?:[a-zA-Z]+|#\d+|#x[0-9a-fA-F]+);)/', '&amp;', $html);
+        return $html;
+    }
+
+    /**
+     * Convierte HTML de tabla a XML válido usando DOMDocument como parser intermedio
+     */
+    private function tableHtmlToXml(string $html): string {
+        $html = preg_replace('/\s+style="[^"]*"/i', '', $html);
+        $html = preg_replace('/\s+class="[^"]*"/i', '', $html);
+        $html = preg_replace('/\s+id="[^"]*"/i', '', $html);
+
+        libxml_use_internal_errors(true);
+        $tmpDom = new DOMDocument('1.0', 'UTF-8');
+        $tmpDom->loadHTML(
+            '<?xml encoding="UTF-8">' . $html,
+            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NOERROR
+        );
+        libxml_clear_errors();
+
+        $tableTags = $tmpDom->getElementsByTagName('table');
+        if ($tableTags->length === 0) return '';
+        return $tmpDom->saveXML($tableTags->item(0));
+    }
+
+    /**
+     * Insertar tabla por etiqueta (Ej: Tabla 1) con conversión HTML→XML robusta
      */
     private function appendTableByLabel($dom, $parent, $label, $tables) {
         $tableData = null;
@@ -460,7 +598,7 @@ class JATSGenerator {
                 break;
             }
         }
-        
+
         if (!$tableData) return;
 
         $tableWrap = $dom->createElement('table-wrap');
@@ -469,9 +607,10 @@ class JATSGenerator {
 
         $labelEl = $dom->createElement('label', htmlspecialchars($tableData['label'] ?? 'Tabla'));
         $tableWrap->appendChild($labelEl);
+
         $caption = $dom->createElement('caption');
-        $p = $dom->createElement('p', htmlspecialchars($tableData['caption'] ?? ($tableData['title'] ?? '')));
-        $caption->appendChild($p);
+        $capText = $tableData['caption'] ?? ($tableData['title'] ?? '');
+        $caption->appendChild($dom->createElement('p', htmlspecialchars($capText)));
         $tableWrap->appendChild($caption);
 
         if (!empty($tableData['src']) && ($tableData['type'] ?? '') === 'image') {
@@ -479,21 +618,40 @@ class JATSGenerator {
             $graphic->setAttribute('xlink:href', htmlspecialchars($tableData['src']));
             $tableWrap->appendChild($graphic);
         } elseif (!empty($tableData['html'])) {
-            $fragment = $dom->createDocumentFragment();
-            $tableHtml = preg_replace('/style="[^"]*"|class="[^"]*"|id="[^"]*"/i', '', $tableData['html']);
-            try {
-                @$fragment->appendXML($tableHtml);
-                $tableWrap->appendChild($fragment);
-            } catch (Exception $e) {
-                $tableWrap->appendChild($dom->createElement('table'));
+            // 1er intento: conversión via DOMDocument (más robusta)
+            $tableXml = $this->tableHtmlToXml($tableData['html']);
+            $appended  = false;
+            if (!empty($tableXml)) {
+                $frag = $dom->createDocumentFragment();
+                libxml_use_internal_errors(true);
+                $ok = @$frag->appendXML($tableXml);
+                libxml_clear_errors();
+                if ($ok !== false) {
+                    $tableWrap->appendChild($frag);
+                    $appended = true;
+                }
+            }
+            // 2do intento: limpiar atributos y convertir entidades, luego appendXML
+            if (!$appended) {
+                $clean = preg_replace('/style="[^"]*"|class="[^"]*"|id="[^"]*"/i', '', $tableData['html']);
+                $clean = $this->htmlToXmlFragment($clean);
+                $frag2 = $dom->createDocumentFragment();
+                libxml_use_internal_errors(true);
+                $ok2 = @$frag2->appendXML($clean);
+                libxml_clear_errors();
+                if ($ok2 !== false) {
+                    $tableWrap->appendChild($frag2);
+                } else {
+                    // Fallback final: tabla vacía
+                    $tableWrap->appendChild($dom->createElement('table'));
+                }
             }
         }
-        
+
         if (!empty($tableData['nota']) && trim($tableData['nota']) !== '') {
             $footer = $dom->createElement('table-wrap-foot');
-            $fn = $dom->createElement('fn');
-            $p = $dom->createElement('p', 'Nota. ' . htmlspecialchars($tableData['nota']));
-            $fn->appendChild($p);
+            $fn     = $dom->createElement('fn');
+            $fn->appendChild($dom->createElement('p', 'Nota. ' . htmlspecialchars($tableData['nota'])));
             $footer->appendChild($fn);
             $tableWrap->appendChild($footer);
         }
