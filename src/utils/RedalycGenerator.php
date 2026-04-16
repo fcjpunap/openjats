@@ -122,7 +122,7 @@ class RedalycGenerator {
         $xmlPath = $articleDir . '/redalyc.xml';
         file_put_contents($xmlPath, $xmlContent);
         
-        $this->articleModel->addFile(['article_id' => $articleId, 'file_type' => 'xml_jats_redalyc', 'file_path' => $xmlPath, 'file_size' => strlen($xmlContent), 'mime_type' => 'application/xml']);
+        $this->articleModel->addFile(['article_id' => $articleId, 'file_type' => 'xml_jats', 'file_path' => $xmlPath, 'file_size' => strlen($xmlContent), 'mime_type' => 'application/xml']);
         
         return ['success' => true, 'file_path' => $xmlPath, 'download_url' => 'articles/' . $article['article_id'] . '/redalyc.xml'];
     }

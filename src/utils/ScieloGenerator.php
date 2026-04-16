@@ -174,7 +174,7 @@ class ScieloGenerator {
         // Guardar en BD
         $this->articleModel->addFile([
             'article_id' => $articleId,
-            'file_type' => 'xml_jats_scielo',
+            'file_type' => 'xml_jats',
             'file_path' => $xmlPath,
             'file_size' => strlen($xmlContent),
             'mime_type' => 'application/xml',
