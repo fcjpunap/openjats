@@ -1,6 +1,6 @@
 <?php
 /**
- * Clase JATSGenerator - Generación de XML-JATS desde datos marcados
+ * Clase ScieloGenerator - Generación de XML-JATS con estándares de SciELO
  */
 
 require_once __DIR__ . '/../models/Article.php';
@@ -36,20 +36,88 @@ class ScieloGenerator {
         // Obtener información de la revista
         $journal = $this->getJournalInfo($article);
         
-        // Obtener markup data (si existe) para tablas/figuras
+        // Obtener markup data de respaldo
         $markup = $this->articleModel->getMarkup($articleId);
-        $markupTables = [];
-        $markupFigures = [];
-        if ($markup && isset($markup['markup_data'])) {
-            $markupTables = $markup['markup_data']['tables'] ?? [];
-            $markupFigures = $markup['markup_data']['images'] ?? [];
+        $md = ($markup && isset($markup['markup_data'])) ? $markup['markup_data'] : [];
+        $markupTables  = $md['tables'] ?? [];
+        $markupFigures = $md['images'] ?? [];
+        $markupSections = $md['sections'] ?? [];
+
+        // FALLBACKS DE DATOS DESDE EL EDITOR (MARKUP_DATA)
+        
+        // 1. Secciones: si la tabla article_sections está vacía
+        if (empty($sections) && !empty($markupSections)) {
+            $sections = array_map(function($s, $i) {
+                return [
+                    'section_id'   => 'sec-' . ($i + 1),
+                    'section_type' => $s['type'] ?? 'other',
+                    'title'        => $s['type_name'] ?? ($s['title'] ?? ''),
+                    'content'      => $s['content'] ?? '',
+                    'level'        => $s['level'] ?? 1,
+                    'section_order'=> $i + 1,
+                ];
+            }, $markupSections, array_keys($markupSections));
+        }
+
+        // 2. Tablas: merge de article_tables con markup_data (markup manda)
+        if (empty($tables) && !empty($markupTables)) {
+            $tables = $markupTables;
+        } elseif (!empty($markupTables)) {
+            $markupTablesIndexed = [];
+            foreach ($markupTables as $mt) {
+                $markupTablesIndexed[strtolower(trim($mt['label'] ?? ''))] = $mt;
+            }
+            $mergedTables = [];
+            foreach ($tables as $t) {
+                $key = strtolower(trim($t['label'] ?? ''));
+                $mergedTables[] = $markupTablesIndexed[$key] ?? $t;
+            }
+            // Agregar tablas nuevas del editor
+            foreach ($markupTables as $mt) {
+                $key = strtolower(trim($mt['label'] ?? ''));
+                $found = false;
+                foreach ($mergedTables as $m) {
+                    if (strtolower(trim($m['label'] ?? '')) === $key) { $found = true; break; }
+                }
+                if (!$found) $mergedTables[] = $mt;
+            }
+            $tables = $mergedTables;
+        }
+
+        // 3. Autores: si article_authors está vacía
+        if (empty($authors) && !empty($md['authors'])) {
+            $authors = $md['authors'];
+        }
+
+        // 4. Afiliaciones: extraer de autores si la tabla está vacía
+        if (empty($affiliations)) {
+            $affiliations = $md['affiliations'] ?? [];
+            if (empty($affiliations) && !empty($authors)) {
+                $tempAffs = [];
+                foreach ($authors as &$author) {
+                    if (!empty($author['affiliation']) && empty($author['affiliation_id'])) {
+                        $affId = 'aff-' . crc32($author['affiliation']);
+                        $author['affiliation_id'] = $affId;
+                        $tempAffs[$affId] = [
+                            'affiliation_id' => $affId,
+                            'institution' => $author['affiliation']
+                        ];
+                    }
+                }
+                $affiliations = array_values($tempAffs);
+            }
+        }
+
+        // 5. Figuras
+        if (empty($figures) && !empty($markupFigures)) {
+            $figures = $markupFigures;
         }
         
         // Crear documento XML
         $dom = new DOMDocument('1.0', 'UTF-8');
         $dom->formatOutput = true;
         
-        // DOCTYPE
+        // DOCTYPE SciELO compatible
         $implementation = new DOMImplementation();
         $dtd = $implementation->createDocumentType(
             'article',
@@ -81,9 +149,9 @@ class ScieloGenerator {
         // Article metadata
         $articleMeta = $this->createArticleMeta($dom, $article, $authors, $affiliations);
         $front->appendChild($articleMeta);
+        
         // Body (Sections)
-        // Body
-        $body = $this->createBody($dom, $sections, $markupTables, $markupFigures);
+        $body = $this->createBody($dom, $sections, $tables, $figures);
         $articleEl->appendChild($body);
         
         // Back matter (referencias)
@@ -106,7 +174,7 @@ class ScieloGenerator {
         // Guardar en BD
         $this->articleModel->addFile([
             'article_id' => $articleId,
-            'file_type' => 'xml_jats',
+            'file_type' => 'xml_jats_scielo',
             'file_path' => $xmlPath,
             'file_size' => strlen($xmlContent),
             'mime_type' => 'application/xml',
@@ -142,14 +210,12 @@ class ScieloGenerator {
         
         $journalMeta->appendChild($journalTitleGroup);
         
-        // ISSN Print
+        // ISSN
         if (!empty($journal['issn_print'])) {
             $issnPrint = $dom->createElement('issn', $journal['issn_print']);
             $issnPrint->setAttribute('pub-type', 'ppub');
             $journalMeta->appendChild($issnPrint);
         }
-        
-        // ISSN Electronic
         if (!empty($journal['issn_electronic'])) {
             $issnElec = $dom->createElement('issn', $journal['issn_electronic']);
             $issnElec->setAttribute('pub-type', 'epub');
@@ -172,9 +238,9 @@ class ScieloGenerator {
         $articleMeta = $dom->createElement('article-meta');
         
         // Article ID
-        $articleId = $dom->createElement('article-id', htmlspecialchars($article['article_id']));
-        $articleId->setAttribute('pub-id-type', 'publisher-id');
-        $articleMeta->appendChild($articleId);
+        $articleIdNode = $dom->createElement('article-id', htmlspecialchars($article['article_id']));
+        $articleIdNode->setAttribute('pub-id-type', 'publisher-id');
+        $articleMeta->appendChild($articleIdNode);
         
         // DOI
         if (!empty($article['doi'])) {
@@ -184,11 +250,11 @@ class ScieloGenerator {
         }
         
         // Article Categories / Section
-        if (!empty($article['article_type'])) {
+        if (!empty($article['article_type']) || !empty($article['subject'])) {
             $articleCategories = $dom->createElement('article-categories');
             $subjGroup = $dom->createElement('subj-group');
             $subjGroup->setAttribute('subj-group-type', 'heading');
-            $subject = $dom->createElement('subject', htmlspecialchars($article['article_type']));
+            $subject = $dom->createElement('subject', htmlspecialchars($article['article_type'] ?? ($article['subject'] ?? 'Articulo')));
             $subjGroup->appendChild($subject);
             $articleCategories->appendChild($subjGroup);
             $articleMeta->appendChild($articleCategories);
@@ -197,14 +263,15 @@ class ScieloGenerator {
         // Title group
         $titleGroup = $dom->createElement('title-group');
         $title = $dom->createElement('article-title');
-        // Removing xml:lang from primary title as requested by some SciELO checkers
         $title->appendChild($dom->createTextNode($article['title']));
         $titleGroup->appendChild($title);
         
-        if (!empty($article['title_en'])) {
+        // English Title Fallback
+        $titleEn = $article['title_en'] ?? ($article['english_title'] ?? '');
+        if (!empty($titleEn)) {
             $transTitleGroup = $dom->createElement('trans-title-group');
             $transTitleGroup->setAttribute('xml:lang', 'en');
-            $transTitle = $dom->createElement('trans-title', htmlspecialchars($article['title_en']));
+            $transTitle = $dom->createElement('trans-title', htmlspecialchars($titleEn));
             $transTitleGroup->appendChild($transTitle);
             $titleGroup->appendChild($transTitleGroup);
         }
@@ -217,19 +284,11 @@ class ScieloGenerator {
         
         // Affiliations
         if (empty($affiliations)) {
-            // SciELO Brazil Error: There must be at least one element aff.
-            // Creating a fallback affiliation if none exist
-            $fallbackAff = [
-                'affiliation_id' => 'aff1',
-                'institution' => $article['publisher'] ?? 'Universidad Nacional del Altiplano',
-                'country' => 'Perú'
-            ];
-            $affElement = $this->createAffiliation($dom, $fallbackAff);
-            $articleMeta->appendChild($affElement);
+            $fallbackAff = ['affiliation_id' => 'aff1', 'institution' => $article['publisher'] ?? 'UNAP', 'country' => 'Perú'];
+            $articleMeta->appendChild($this->createAffiliation($dom, $fallbackAff));
         } else {
             foreach ($affiliations as $aff) {
-                $affElement = $this->createAffiliation($dom, $aff);
-                $articleMeta->appendChild($affElement);
+                $articleMeta->appendChild($this->createAffiliation($dom, $aff));
             }
         }
         
@@ -237,55 +296,49 @@ class ScieloGenerator {
         if (!empty($article['published_date'])) {
             $pubDate = $dom->createElement('pub-date');
             $pubDate->setAttribute('pub-type', 'epub');
-            $pubDate->setAttribute('date-type', 'pub'); // Required by SciELO
-            $pubDate->setAttribute('publication-format', 'electronic'); // Required by SciELO
+            $pubDate->setAttribute('date-type', 'pub');
+            $pubDate->setAttribute('publication-format', 'electronic');
             $this->addDateElements($dom, $pubDate, $article['published_date']);
             $articleMeta->appendChild($pubDate);
         }
         
-        // Essential for JATS/SciELO: volume, issue, fpage/elocation-id in sequence
+        // Volume, Issue, Elocation
         if (!empty($article['volume_number'])) {
             $volume = $dom->createElement('volume', htmlspecialchars($article['volume_number']));
             $articleMeta->appendChild($volume);
         }
-        
         if (!empty($article['issue_number'])) {
             $issue = $dom->createElement('issue', htmlspecialchars($article['issue_number']));
             $articleMeta->appendChild($issue);
         }
-        
         $elocationId = $dom->createElement('elocation-id', htmlspecialchars($article['pages'] ?? 'e' . $article['article_id']));
         $articleMeta->appendChild($elocationId);
         
         // History
         if (!empty($article['received_date']) || !empty($article['accepted_date'])) {
             $history = $dom->createElement('history');
-            
             if (!empty($article['received_date'])) {
                 $received = $dom->createElement('date');
                 $received->setAttribute('date-type', 'received');
                 $this->addDateElements($dom, $received, $article['received_date']);
                 $history->appendChild($received);
             }
-            
             if (!empty($article['accepted_date'])) {
                 $accepted = $dom->createElement('date');
                 $accepted->setAttribute('date-type', 'accepted');
                 $this->addDateElements($dom, $accepted, $article['accepted_date']);
                 $history->appendChild($accepted);
             }
-            
             $articleMeta->appendChild($history);
         }
         
-        // Permissions (license)
+        // Permissions
         $permissions = $dom->createElement('permissions');
         $copyrightStatement = $dom->createElement('copyright-statement', '© ' . date('Y') . ' Autores (Authors)');
         $permissions->appendChild($copyrightStatement);
         $copyrightYear = $dom->createElement('copyright-year', date('Y'));
         $permissions->appendChild($copyrightYear);
         
-        // Creative Commons License CC BY 4.0
         $license = $dom->createElement('license');
         $license->setAttribute('license-type', 'open-access');
         $license->setAttribute('xlink:href', 'http://creativecommons.org/licenses/by/4.0/');
@@ -293,43 +346,35 @@ class ScieloGenerator {
         $licenseP = $dom->createElement('license-p', 'Este es un artículo de acceso abierto bajo la licencia CC BY 4.0');
         $license->appendChild($licenseP);
         $permissions->appendChild($license);
-        
         $articleMeta->appendChild($permissions);
         
         // Abstract
         if (!empty($article['abstract'])) {
             $abstract = $dom->createElement('abstract');
-            // Removing xml:lang from primary abstract if it matches article lang
-            $abstractP = $dom->createElement('p', htmlspecialchars($article['abstract']));
-            $abstract->appendChild($abstractP);
+            $abstract->appendChild($dom->createElement('p', htmlspecialchars($article['abstract'])));
             $articleMeta->appendChild($abstract);
         }
-        
         if (!empty($article['abstract_en'])) {
             $abstractEn = $dom->createElement('trans-abstract');
             $abstractEn->setAttribute('xml:lang', 'en');
-            $abstractPEn = $dom->createElement('p', htmlspecialchars($article['abstract_en']));
-            $abstractEn->appendChild($abstractPEn);
+            $abstractEn->appendChild($dom->createElement('p', htmlspecialchars($article['abstract_en'])));
             $articleMeta->appendChild($abstractEn);
         }
         
         // Keywords
         if (!empty($article['keywords'])) {
             $kwdGroup = $dom->createElement('kwd-group');
-            $kwdGroup->setAttribute('xml:lang', 'es'); // Mandatory for SciELO
+            $kwdGroup->setAttribute('xml:lang', 'es');
             foreach (explode(',', $article['keywords']) as $keyword) {
-                $kwd = $dom->createElement('kwd', htmlspecialchars(trim($keyword)));
-                $kwdGroup->appendChild($kwd);
+                $kwdGroup->appendChild($dom->createElement('kwd', htmlspecialchars(trim($keyword))));
             }
             $articleMeta->appendChild($kwdGroup);
         }
-        
         if (!empty($article['keywords_en'])) {
             $kwdGroupEn = $dom->createElement('kwd-group');
             $kwdGroupEn->setAttribute('xml:lang', 'en');
             foreach (explode(',', $article['keywords_en']) as $keyword) {
-                $kwd = $dom->createElement('kwd', htmlspecialchars(trim($keyword)));
-                $kwdGroupEn->appendChild($kwd);
+                $kwdGroupEn->appendChild($dom->createElement('kwd', htmlspecialchars(trim($keyword))));
             }
             $articleMeta->appendChild($kwdGroupEn);
         }
@@ -342,42 +387,32 @@ class ScieloGenerator {
      */
     private function createContribGroup($dom, $authors, $affiliations) {
         $contribGroup = $dom->createElement('contrib-group');
-        
         foreach ($authors as $author) {
             $contrib = $dom->createElement('contrib');
             $contrib->setAttribute('contrib-type', 'author');
             
-            // ORCID (Should come before name or xref in some DTDs)
             if (!empty($author['orcid'])) {
                 $contribId = $dom->createElement('contrib-id', 'https://orcid.org/' . $author['orcid']);
                 $contribId->setAttribute('contrib-id-type', 'orcid');
                 $contrib->appendChild($contribId);
             }
 
-            // Name
             $name = $dom->createElement('name');
-            $surname = $dom->createElement('surname', htmlspecialchars($author['surname']));
-            $givenNames = $dom->createElement('given-names', htmlspecialchars($author['given_names']));
-            $name->appendChild($surname);
-            $name->appendChild($givenNames);
+            $name->appendChild($dom->createElement('surname', htmlspecialchars($author['surname'] ?? '')));
+            $name->appendChild($dom->createElement('given-names', htmlspecialchars($author['given_names'] ?? '')));
             $contrib->appendChild($name);
             
-            // Affiliation reference
-            $affId = !empty($author['affiliation_id']) ? $author['affiliation_id'] : 'aff1';
+            $affId = !empty($author['affiliation_id']) ? $author['affiliation_id'] : (isset($affiliations[0]['affiliation_id']) ? $affiliations[0]['affiliation_id'] : 'aff1');
             $xref = $dom->createElement('xref');
             $xref->setAttribute('ref-type', 'aff');
             $xref->setAttribute('rid', $affId);
             $contrib->appendChild($xref);
             
-            // Email
             if (!empty($author['email'])) {
-                $email = $dom->createElement('email', $author['email']);
-                $contrib->appendChild($email);
+                $contrib->appendChild($dom->createElement('email', $author['email']));
             }
-            
             $contribGroup->appendChild($contrib);
         }
-        
         return $contribGroup;
     }
     
@@ -388,8 +423,7 @@ class ScieloGenerator {
         $affElement = $dom->createElement('aff');
         $affElement->setAttribute('id', $aff['affiliation_id'] ?? 'aff1');
         
-        // SciELO Brazil Requires institution with content-type="original"
-        $instName = htmlspecialchars($aff['institution'] ?? 'Universidad Nacional del Altiplano');
+        $instName = htmlspecialchars($aff['institution'] ?? 'UNAP');
         $institutionOriginal = $dom->createElement('institution', $instName);
         $institutionOriginal->setAttribute('content-type', 'original');
         $affElement->appendChild($institutionOriginal);
@@ -403,7 +437,6 @@ class ScieloGenerator {
             $country->setAttribute('country', 'PE');
             $affElement->appendChild($country);
         }
-        
         return $affElement;
     }
     
@@ -412,290 +445,179 @@ class ScieloGenerator {
      */
     private function createBody($dom, $sections, $tables, $figures) {
         $body = $dom->createElement('body');
-        
         foreach ($sections as $section) {
-            $sec = $this->createSection($dom, $section, $tables, $figures);
-            $body->appendChild($sec);
+            $body->appendChild($this->createSection($dom, $section, $tables, $figures));
         }
-        
         return $body;
     }
     
     /**
-     * Crear sección
+     * Crear sección con soporte de múltiples párrafos HTML del editor
      */
     private function createSection($dom, $section, $tables, $figures) {
         $sec = $dom->createElement('sec');
-        $sec->setAttribute('id', $section['section_id']);
-        
+        $sec->setAttribute('id', $section['section_id'] ?? 'sec-' . uniqid());
+
         if (!empty($section['title'])) {
-            $title = $dom->createElement('title', htmlspecialchars($section['title']));
-            $sec->appendChild($title);
+            $sec->appendChild($dom->createElement('title', htmlspecialchars($section['title'])));
         }
-        
+
         if (!empty($section['content'])) {
-            $content = $section['content'];
-            
-            // Regex para detectar etiquetas de posición [Tabla X] o [Figura X]
-            $pattern = '/(\[(?:Tabla|Figura|Table|Figure)\s*[^\]]+\])/i';
-            $parts = preg_split($pattern, $content, -1, PREG_SPLIT_DELIM_CAPTURE);
-            
-            $currentP = null;
-            
-            foreach ($parts as $part) {
-                if (empty($part)) continue;
+            $blocks = $this->extractParagraphsFromHtml($section['content']);
+            foreach ($blocks as $block) {
+                if (empty(trim($block))) continue;
                 
-                $cleanPart = strip_tags($part);
-                
-                if (preg_match('/^\[(Tabla|Table)\s*([^\]]+)\]$/i', $cleanPart, $matches)) {
-                    $labelToFind = trim($matches[1] . ' ' . $matches[2]);
-                    $this->appendTableByLabel($dom, $sec, $labelToFind, $tables);
-                    $currentP = null;
-                } elseif (preg_match('/^\[(Figura|Figure)\s*([^\]]+)\]$/i', $cleanPart, $matches)) {
-                    $labelToFind = trim($matches[1] . ' ' . $matches[2]);
-                    $this->appendFigureByLabel($dom, $sec, $labelToFind, $figures);
-                    $currentP = null;
-                } else {
-                    if (!$currentP) {
-                        $currentP = $dom->createElement('p');
-                        $sec->appendChild($currentP);
-                    }
-                    
-                    // Importar HTML básico (b, i, u, sub, sup) y convertir <a> a <xref>
-                    $textToImport = $part;
-                    
-                    // Footnotes: <a href="#fn-1" data-fnid="fn-1">...</a> -> <xref ref-type="fn" rid="fn-1">...</xref>
-                    $textToImport = preg_replace('/<a\s+[^>]*data-fnid=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/i', '<xref ref-type="fn" rid="$1">$2</xref>', $textToImport);
-                    
-                    // References: <a href="#ref-1" data-refid="ref-1" ...>...</a> -> <xref ref-type="bibr" rid="ref-1">...</xref>
-                    $textToImport = preg_replace('/<a\s+[^>]*data-refid=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/i', '<xref ref-type="bibr" rid="$1">$2</xref>', $textToImport);
-                    
-                    $allowedTags = '<b><i><u><sub><sup><xref>';
-                    $fragment = $dom->createDocumentFragment();
-                    $textToImport = strip_tags($textToImport, $allowedTags);
-                    
-                    try {
-                        @$fragment->appendXML($textToImport);
-                        $currentP->appendChild($fragment);
-                    } catch (Exception $e) {
-                        $currentP->appendChild($dom->createTextNode($cleanPart));
+                $cleanBlock = trim(strip_tags($block));
+                // Placeholder detect
+                if (preg_match('/^\[(Tabla|Figura|Table|Figure)\s*([^\]]+)\]$/i', $cleanBlock, $m)) {
+                    if (stripos($m[1], 'Tab') !== false) $this->appendTableByLabel($dom, $sec, trim($m[1] . ' ' . $m[2]), $tables);
+                    else $this->appendFigureByLabel($dom, $sec, trim($m[1] . ' ' . $m[2]), $figures);
+                    continue;
+                }
+
+                $pattern = '/(\[(?:Tabla|Figura|Table|Figure)\s*[^\]]+\])/i';
+                $parts = preg_split($pattern, $block, -1, PREG_SPLIT_DELIM_CAPTURE);
+                $currentP = null;
+
+                foreach ($parts as $part) {
+                    if ($part === '') continue;
+                    $cleanPart = trim(strip_tags($part));
+
+                    if (preg_match('/^\[(Tabla|Table)\s*([^\]]+)\]$/i', $cleanPart, $m)) {
+                        if ($currentP) { $sec->appendChild($currentP); $currentP = null; }
+                        $this->appendTableByLabel($dom, $sec, trim($m[1] . ' ' . $m[2]), $tables);
+                    } elseif (preg_match('/^\[(Figura|Figure)\s*([^\]]+)\]$/i', $cleanPart, $m)) {
+                        if ($currentP) { $sec->appendChild($currentP); $currentP = null; }
+                        $this->appendFigureByLabel($dom, $sec, trim($m[1] . ' ' . $m[2]), $figures);
+                    } else {
+                        if (!$currentP) $currentP = $dom->createElement('p');
+                        $text = $this->htmlToXmlFragment($part);
+                        if (trim($text) !== '') {
+                            $frag = $dom->createDocumentFragment();
+                            if (@$frag->appendXML($text)) $currentP->appendChild($frag);
+                            else $currentP->appendChild($dom->createTextNode(strip_tags($text)));
+                        }
                     }
                 }
+                if ($currentP) $sec->appendChild($currentP);
             }
         }
-        
         return $sec;
     }
 
-    /**
-     * Insertar tabla por etiqueta
-     */
+    private function extractParagraphsFromHtml(string $html): array {
+        $html = str_replace(["\r\n", "\r", "\n"], " ", $html);
+        $break = '||PARBREAK||';
+        $html = preg_replace('/<\/(p|div|li|h[1-6]|blockquote)>/i', $break, $html);
+        $html = preg_replace('/(<br\s*\/?>\s*){2,}/i', $break, $html);
+        $html = preg_replace('/<(p|div|ul|ol|li|h[1-6]|blockquote)[^>]*>/i', '', $html);
+        $chunks = explode($break, $html);
+        $result = [];
+        foreach ($chunks as $chunk) {
+            $chunk = preg_replace('/\s+/', ' ', $chunk);
+            $chunk = trim($chunk);
+            if ($chunk !== '') $result[] = $chunk;
+        }
+        return $result;
+    }
+
+    private function htmlToXmlFragment(string $html): string {
+        $map = ['&nbsp;'=>'&#160;', '&ndash;'=>'–', '&mdash;'=>'—', '&ldquo;'=>'"', '&rdquo;'=>'"', '&hellip;'=>'…', '&bull;'=>'•'];
+        foreach ($map as $entity => $char) $html = str_replace($entity, $char, $html);
+        $html = html_entity_decode($html, ENT_HTML5 | ENT_QUOTES, 'UTF-8');
+        $html = preg_replace('/&(?!(?:[a-zA-Z]+|#\d+|#x[0-9a-fA-F]+);)/', '&amp;', $html);
+        return $html;
+    }
+
+    private function tableHtmlToXml(string $html): string {
+        $html = preg_replace('/\s+(style|class|id)="[^"]*"/i', '', $html);
+        libxml_use_internal_errors(true);
+        $tmpDom = new DOMDocument('1.0', 'UTF-8');
+        $tmpDom->loadHTML('<?xml encoding="UTF-8">' . $html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        libxml_clear_errors();
+        $tableTags = $tmpDom->getElementsByTagName('table');
+        return $tableTags->length > 0 ? $tmpDom->saveXML($tableTags->item(0)) : '';
+    }
+
     private function appendTableByLabel($dom, $parent, $label, $tables) {
-        $tableData = null;
-        foreach ($tables as $t) {
-            if (strcasecmp(trim($t['label'] ?? ''), $label) === 0) {
-                $tableData = $t;
-                break;
-            }
+        $data = null;
+        foreach ($tables as $t) { if (strcasecmp(trim($t['label'] ?? ''), $label) === 0) { $data = $t; break; } }
+        if (!$data) return;
+        $tw = $dom->createElement('table-wrap');
+        $tw->setAttribute('id', 't-' . uniqid());
+        $parent->appendChild($tw);
+        $tw->appendChild($dom->createElement('label', htmlspecialchars($data['label'] ?? 'Tabla')));
+        $cap = $dom->createElement('caption');
+        $cap->appendChild($dom->createElement('p', htmlspecialchars($data['caption'] ?? ($data['title'] ?? ''))));
+        $tw->appendChild($cap);
+        if (!empty($data['src']) && ($data['type'] ?? '') === 'image') {
+            $g = $dom->createElement('graphic'); $g->setAttribute('xlink:href', htmlspecialchars($data['src'])); $tw->appendChild($g);
+        } elseif (!empty($data['html'])) {
+            $f = $dom->createDocumentFragment();
+            $xml = $this->tableHtmlToXml($data['html']);
+            if ($xml && @$f->appendXML($xml)) $tw->appendChild($f);
+            else $tw->appendChild($dom->createElement('table'));
         }
-        
-        if (!$tableData) return;
-
-        $tableWrap = $dom->createElement('table-wrap');
-        $tableWrap->setAttribute('id', 't-' . uniqid());
-        $parent->appendChild($tableWrap);
-
-        $labelEl = $dom->createElement('label', htmlspecialchars($tableData['label'] ?? 'Tabla'));
-        $tableWrap->appendChild($labelEl);
-
-        $caption = $dom->createElement('caption');
-        $p = $dom->createElement('p', htmlspecialchars($tableData['caption'] ?? ($tableData['title'] ?? '')));
-        $caption->appendChild($p);
-        $tableWrap->appendChild($caption);
-
-        if (!empty($tableData['src']) && ($tableData['type'] ?? '') === 'image') {
-            $graphic = $dom->createElement('graphic');
-            $graphic->setAttribute('xlink:href', htmlspecialchars($tableData['src']));
-            $tableWrap->appendChild($graphic);
-        } elseif (!empty($tableData['html'])) {
-            $fragment = $dom->createDocumentFragment();
-            $tableHtml = preg_replace('/style="[^"]*"|class="[^"]*"|id="[^"]*"/i', '', ($tableData['html'] ?? $tableData['html_content'] ?? ''));
-            try {
-                @$fragment->appendXML($tableHtml);
-                $tableWrap->appendChild($fragment);
-            } catch (Exception $e) {
-                $tableWrap->appendChild($dom->createElement('table'));
-            }
-        }
-        
-        if (!empty($tableData['nota'])) {
-            $footer = $dom->createElement('table-wrap-foot');
-            $fn = $dom->createElement('fn');
-            $p = $dom->createElement('p', 'Nota. ' . htmlspecialchars($tableData['nota']));
-            $fn->appendChild($p);
-            $footer->appendChild($fn);
-            $tableWrap->appendChild($footer);
+        if (!empty($data['nota'])) {
+            $foot = $dom->createElement('table-wrap-foot'); $fn = $dom->createElement('fn');
+            $fn->appendChild($dom->createElement('p', 'Nota. ' . htmlspecialchars($data['nota'])));
+            $foot->appendChild($fn); $tw->appendChild($foot);
         }
     }
 
-    /**
-     * Insertar figura por etiqueta
-     */
     private function appendFigureByLabel($dom, $parent, $label, $figures) {
-        $figData = null;
-        foreach ($figures as $f) {
-            if (strcasecmp(trim($f['label'] ?? ''), $label) === 0) {
-                $figData = $f;
-                break;
-            }
-        }
-        
-        if (!$figData) return;
-
-        $fig = $dom->createElement('fig');
-        $fig->setAttribute('id', 'f-' . uniqid());
-        $parent->appendChild($fig);
-
-        $labelEl = $dom->createElement('label', htmlspecialchars($figData['label'] ?? 'Figura'));
-        $fig->appendChild($labelEl);
-
-        $caption = $dom->createElement('caption');
-        $p = $dom->createElement('p', htmlspecialchars($figData['alt'] ?? ($figData['caption'] ?? '')));
-        $caption->appendChild($p);
-        $fig->appendChild($caption);
-
-        $graphic = $dom->createElement('graphic');
-        $graphic->setAttribute('xlink:href', htmlspecialchars($figData['src'] ?? ''));
-        $fig->appendChild($graphic);
-        
-        if (!empty($figData['nota'])) {
-            $p = $dom->createElement('p', 'Nota. ' . htmlspecialchars($figData['nota']));
-            $fig->appendChild($p);
-        }
+        $data = null;
+        foreach ($figures as $f) { if (strcasecmp(trim($f['label'] ?? ''), $label) === 0) { $data = $f; break; } }
+        if (!$data) return;
+        $fig = $dom->createElement('fig'); $fig->setAttribute('id', 'f-' . uniqid()); $parent->appendChild($fig);
+        $fig->appendChild($dom->createElement('label', htmlspecialchars($data['label'] ?? 'Figura')));
+        $cap = $dom->createElement('caption');
+        $cap->appendChild($dom->createElement('p', htmlspecialchars($data['alt'] ?? ($data['caption'] ?? ''))));
+        $fig->appendChild($cap);
+        $g = $dom->createElement('graphic'); $g->setAttribute('xlink:href', htmlspecialchars($data['src'] ?? '')); $fig->appendChild($g);
+        if (!empty($data['nota'])) $fig->appendChild($dom->createElement('p', 'Nota. ' . htmlspecialchars($data['nota'])));
     }
-    
-    /**
-     * Crear back matter (referencias)
-     */
+
     private function createBack($dom, $references) {
         $back = $dom->createElement('back');
-        
         if (!empty($references)) {
-            $refList = $dom->createElement('ref-list');
-            $refTitle = $dom->createElement('title', 'Referencias');
-            $refList->appendChild($refTitle);
-            
-            foreach ($references as $ref) {
-                $refElement = $this->createReference($dom, $ref);
-                $refList->appendChild($refElement);
-            }
-            
-            $back->appendChild($refList);
+            $rl = $dom->createElement('ref-list'); $rl->appendChild($dom->createElement('title', 'Referencias'));
+            foreach ($references as $r) $rl->appendChild($this->createReference($dom, $r));
+            $back->appendChild($rl);
         }
-        
         return $back;
     }
-    
-    /**
-     * Crear elemento de referencia
-     */
+
     private function createReference($dom, $ref) {
-        $refElement = $dom->createElement('ref');
-        $refElement->setAttribute('id', $ref['ref_id']);
-        
-        $elementCitation = $dom->createElement('element-citation');
-        $elementCitation->setAttribute('publication-type', $ref['reference_type'] ?? 'journal');
-        
-        if (!empty($ref['authors'])) {
-            $personGroup = $dom->createElement('person-group');
-            $personGroup->setAttribute('person-group-type', 'author');
-            // Aquí se podría parsear los autores individualmente
-            $elementCitation->appendChild($personGroup);
-        }
-        
-        if (!empty($ref['year'])) {
-            $year = $dom->createElement('year', $ref['year']);
-            $elementCitation->appendChild($year);
-        }
-        
-        if (!empty($ref['title'])) {
-            $articleTitle = $dom->createElement('article-title', htmlspecialchars($ref['title']));
-            $elementCitation->appendChild($articleTitle);
-        }
-        
-        if (!empty($ref['source'])) {
-            $source = $dom->createElement('source', htmlspecialchars($ref['source']));
-            $elementCitation->appendChild($source);
-        }
-        
-        if (!empty($ref['volume'])) {
-            $volume = $dom->createElement('volume', $ref['volume']);
-            $elementCitation->appendChild($volume);
-        }
-        
-        if (!empty($ref['doi'])) {
-            $doi = $dom->createElement('pub-id', $ref['doi']);
-            $doi->setAttribute('pub-id-type', 'doi');
-            $elementCitation->appendChild($doi);
-        }
-        
-        if (!empty($ref['url'])) {
-            $extLink = $dom->createElement('ext-link', htmlspecialchars($ref['url']));
-            $extLink->setAttribute('ext-link-type', 'uri');
-            $extLink->setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', $ref['url']);
-            $elementCitation->appendChild($extLink);
-        }
-        
-        $refElement->appendChild($elementCitation);
-
-        // Required by SciELO: mixed-citation
-        $mixedCitation = $dom->createElement('mixed-citation');
-        $citationText = "";
-        if (!empty($ref['authors'])) $citationText .= $ref['authors'] . ". ";
-        if (!empty($ref['year'])) $citationText .= "(" . $ref['year'] . "). ";
-        if (!empty($ref['title'])) $citationText .= $ref['title'] . ". ";
-        if (!empty($ref['source'])) $citationText .= $ref['source'] . ". ";
-        if (!empty($ref['volume'])) $citationText .= "Vol. " . $ref['volume'] . ". ";
-        if (!empty($ref['doi'])) $citationText .= "DOI: " . $ref['doi'] . ". ";
-        if (!empty($ref['url'])) $citationText .= "URL: " . $ref['url'];
-        
-        $mixedCitation->appendChild($dom->createTextNode(trim($citationText)));
-        $refElement->appendChild($mixedCitation);
-
-        return $refElement;
+        $rEl = $dom->createElement('ref'); $rEl->setAttribute('id', $ref['ref_id'] ?? 'ref-' . uniqid());
+        $cit = $dom->createElement('element-citation');
+        $cit->setAttribute('publication-type', $ref['reference_type'] ?? 'journal');
+        if (!empty($ref['authors'])) { $pg = $dom->createElement('person-group'); $pg->setAttribute('person-group-type', 'author'); $cit->appendChild($pg); }
+        if (!empty($ref['year'])) $cit->appendChild($dom->createElement('year', $ref['year']));
+        if (!empty($ref['title'])) $cit->appendChild($dom->createElement('article-title', htmlspecialchars($ref['title'])));
+        if (!empty($ref['source'])) $cit->appendChild($dom->createElement('source', htmlspecialchars($ref['source'])));
+        if (!empty($ref['doi'])) { $doi = $dom->createElement('pub-id', $ref['doi']); $doi->setAttribute('pub-id-type', 'doi'); $cit->appendChild($doi); }
+        $rEl->appendChild($cit);
+        $mix = $dom->createElement('mixed-citation');
+        $txt = ($ref['authors'] ?? '') . ". " . (!empty($ref['year']) ? "(".$ref['year']."). " : "") . ($ref['title'] ?? "") . ". " . ($ref['source'] ?? "");
+        $mix->appendChild($dom->createTextNode(trim($txt)));
+        $rEl->appendChild($mix);
+        return $rEl;
     }
-    
-    /**
-     * Agregar elementos de fecha
-     */
+
     private function addDateElements($dom, $parentElement, $dateString) {
-        $date = new DateTime($dateString);
-        
-        $day = $dom->createElement('day', $date->format('d'));
-        $month = $dom->createElement('month', $date->format('m'));
-        $year = $dom->createElement('year', $date->format('Y'));
-        
-        $parentElement->appendChild($day);
-        $parentElement->appendChild($month);
-        $parentElement->appendChild($year);
+        try {
+            $date = new DateTime($dateString);
+            $parentElement->appendChild($dom->createElement('day', $date->format('d')));
+            $parentElement->appendChild($dom->createElement('month', $date->format('m')));
+            $parentElement->appendChild($dom->createElement('year', $date->format('Y')));
+        } catch (Exception $e) {}
     }
-    
-    /**
-     * Obtener información de la revista
-     */
+
     private function getJournalInfo($article) {
-        $sql = "SELECT j.* FROM journals j
-                LEFT JOIN volumes v ON j.id = v.journal_id
-                LEFT JOIN issues i ON v.id = i.volume_id
-                WHERE i.id = :issue_id";
-        
+        $sql = "SELECT j.* FROM journals j LEFT JOIN volumes v ON j.id = v.journal_id LEFT JOIN issues i ON v.id = i.volume_id WHERE i.id = :issue_id";
         $journal = $this->db->fetchOne($sql, ['issue_id' => $article['issue_id']]);
-        
-        if (!$journal) {
-            // Obtener primera revista disponible
-            $journal = $this->db->fetchOne("SELECT * FROM journals WHERE active = TRUE LIMIT 1");
-        }
-        
+        if (!$journal) $journal = $this->db->fetchOne("SELECT * FROM journals WHERE active = TRUE LIMIT 1");
         return $journal ?: [];
     }
 }
