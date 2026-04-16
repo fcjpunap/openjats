@@ -150,6 +150,14 @@ class JATSGenerator {
         $articleMeta = $this->createArticleMeta($dom, $article, $authors, $affiliations);
         $front->appendChild($articleMeta);
 
+        // Referencias: fallback a markup_data
+        if (empty($references) && !empty($md['references'])) {
+            $references = $md['references'];
+        }
+        
+        // Footnotes: fallback a markup_data (para resolver unknown ID fn-X)
+        $footnotes = $md['footnotes'] ?? [];
+
         // Figuras: usar markup_data si article_figures está vacía
         if (empty($figures) && !empty($markupFigures)) {
             $figures = $markupFigures;
@@ -159,8 +167,8 @@ class JATSGenerator {
         $body = $this->createBody($dom, $sections, $tables, $figures);
         $articleElement->appendChild($body);
         
-        // Back matter (referencias)
-        $back = $this->createBack($dom, $references);
+        // Back matter (referencias y notas)
+        $back = $this->createBack($dom, $references, $footnotes);
         $articleElement->appendChild($back);
         
         $xmlContent = $dom->saveXML();
@@ -783,15 +791,34 @@ class JATSGenerator {
     /**
      * Crear back matter (referencias)
      */
-    private function createBack($dom, $references) {
+    private function createBack($dom, $references, $footnotes = []) {
         $back = $dom->createElement('back');
         
+        // Notas al pie (Footnotes)
+        if (!empty($footnotes)) {
+            $fnGroup = $dom->createElement('fn-group');
+            foreach ($footnotes as $i => $fn) {
+                $fnEl = $dom->createElement('fn');
+                $fid = $fn['id'] ?? ('fn-' . ($i + 1));
+                // Limpiar prefijo # si viene del editor
+                if (is_string($fid) && strpos($fid, '#') === 0) $fid = substr($fid, 1);
+                $fnEl->setAttribute('id', $fid);
+                $fnEl->appendChild($dom->createElement('p', htmlspecialchars($fn['content'] ?? '')));
+                $fnGroup->appendChild($fnEl);
+            }
+            $back->appendChild($fnGroup);
+        }
+
         if (!empty($references)) {
             $refList = $dom->createElement('ref-list');
             $refTitle = $dom->createElement('title', 'Referencias');
             $refList->appendChild($refTitle);
             
-            foreach ($references as $ref) {
+            foreach ($references as $i => $ref) {
+                // Forzar ID secuencial ref-N si ref_id no cumple el formato
+                if (empty($ref['ref_id']) || !preg_match('/^ref-\d+$/i', $ref['ref_id'])) {
+                    $ref['ref_id'] = 'ref-' . ($i + 1);
+                }
                 $refElement = $this->createReference($dom, $ref);
                 $refList->appendChild($refElement);
             }
@@ -853,6 +880,13 @@ class JATSGenerator {
         }
         
         $refElement->appendChild($elementCitation);
+
+        // Mixed citation (requerido por SciELO SPS)
+        $mixed = $dom->createElement('mixed-citation');
+        $fullTxt = ($ref['authors'] ?? '') . ' (' . ($ref['year'] ?? '') . '). ' . ($ref['title'] ?? '') . '. ' . ($ref['source'] ?? '');
+        $mixed->appendChild($dom->createTextNode(trim($fullTxt, ' .')));
+        $refElement->appendChild($mixed);
+
         return $refElement;
     }
     

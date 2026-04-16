@@ -15,17 +15,10 @@ class ScieloGenerator {
         $this->db = Database::getInstance();
     }
     
-    /**
-     * Generar XML-JATS completo para un artículo
-     */
     public function generateXML($articleId) {
         $article = $this->articleModel->getById($articleId);
+        if (!$article) throw new Exception("Artículo no encontrado");
         
-        if (!$article) {
-            throw new Exception("Artículo no encontrado");
-        }
-        
-        // Obtener todos los datos del artículo
         $authors = $this->articleModel->getAuthors($articleId);
         $affiliations = $this->articleModel->getAffiliations($articleId);
         $sections = $this->articleModel->getSections($articleId);
@@ -33,45 +26,35 @@ class ScieloGenerator {
         $figures = $this->articleModel->getFigures($articleId);
         $references = $this->articleModel->getReferences($articleId);
         
-        // Obtener información de la revista
         $journal = $this->getJournalInfo($article);
-        
-        // Obtener markup data de respaldo
         $markup = $this->articleModel->getMarkup($articleId);
         $md = ($markup && isset($markup['markup_data'])) ? $markup['markup_data'] : [];
-        $markupTables  = $md['tables'] ?? [];
+        $markupTables = $md['tables'] ?? [];
         $markupFigures = $md['images'] ?? [];
         $markupSections = $md['sections'] ?? [];
 
-        // FALLBACKS DE DATOS DESDE EL EDITOR (MARKUP_DATA)
         if (empty($sections) && !empty($markupSections)) {
             $sections = array_map(function($s, $i) {
-                return [
-                    'section_id'   => 'sec-' . ($i + 1),
-                    'section_type' => $s['type'] ?? 'other',
-                    'title'        => $s['type_name'] ?? ($s['title'] ?? ''),
-                    'content'      => $s['content'] ?? '',
-                    'level'        => $s['level'] ?? 1,
-                    'section_order'=> $i + 1,
-                ];
+                return ['section_id'=>'sec-'.($i+1), 'section_type'=>$s['type']??'other', 'title'=>$s['type_name']??($s['title']??''), 'content'=>$s['content']??'', 'level'=>$s['level']??1, 'section_order'=>$i+1];
             }, $markupSections, array_keys($markupSections));
         }
-
         if (empty($tables) && !empty($markupTables)) $tables = $markupTables;
         if (empty($authors) && !empty($md['authors'])) $authors = $md['authors'];
+        if (empty($references) && !empty($md['references'])) $references = $md['references'];
+        $footnotes = $md['footnotes'] ?? [];
 
         if (empty($affiliations)) {
             $affiliations = $md['affiliations'] ?? [];
             if (empty($affiliations) && !empty($authors)) {
-                $tempAffs = [];
-                foreach ($authors as &$author) {
-                    if (!empty($author['affiliation']) && empty($author['affiliation_id'])) {
-                        $affId = 'aff-' . crc32($author['affiliation']);
-                        $author['affiliation_id'] = $affId;
-                        $tempAffs[$affId] = ['affiliation_id' => $affId, 'institution' => $author['affiliation']];
+                $temp = [];
+                foreach ($authors as &$au) {
+                    if (!empty($au['affiliation']) && empty($au['affiliation_id'])) {
+                        $id = 'aff-' . crc32($au['affiliation']);
+                        $au['affiliation_id'] = $id;
+                        $temp[$id] = ['affiliation_id' => $id, 'institution' => $au['affiliation']];
                     }
                 }
-                $affiliations = array_values($tempAffs);
+                $affiliations = array_values($temp);
             }
         }
 
@@ -80,9 +63,9 @@ class ScieloGenerator {
         $dom = new DOMDocument('1.0', 'UTF-8');
         $dom->formatOutput = true;
         
-        $implementation = new DOMImplementation();
-        $dtd = $implementation->createDocumentType('article', '-//NLM//DTD JATS (Z39.96) Journal Publishing DTD v1.1 20151215//EN', 'http://jats.nlm.nih.gov/publishing/1.1/JATS-journalpublishing1.dtd');
-        $dom = $implementation->createDocument('', '', $dtd);
+        $impl = new DOMImplementation();
+        $dtd = $impl->createDocumentType('article', '-//NLM//DTD JATS (Z39.96) Journal Publishing DTD v1.1 20151215//EN', 'http://jats.nlm.nih.gov/publishing/1.1/JATS-journalpublishing1.dtd');
+        $dom = $impl->createDocument('', '', $dtd);
         $dom->encoding = 'UTF-8';
         $dom->formatOutput = true;
         
@@ -101,18 +84,15 @@ class ScieloGenerator {
         $front->appendChild($this->createArticleMeta($dom, $article, $authors, $affiliations));
         
         $articleEl->appendChild($this->createBody($dom, $sections, $tables, $figures));
-        $articleEl->appendChild($this->createBack($dom, $references));
+        $articleEl->appendChild($this->createBack($dom, $references, $footnotes));
         
         $xmlContent = $dom->saveXML();
-        
         $config = require __DIR__ . '/../../config/config.php';
         $articleDir = $config['paths']['articles'] . $article['article_id'];
         if (!is_dir($articleDir)) mkdir($articleDir, 0755, true);
         
         $xmlPath = $articleDir . '/scielo.xml';
         file_put_contents($xmlPath, $xmlContent);
-        
-        // Guardar en BD con el tipo estándar 'xml_jats'
         $this->articleModel->addFile(['article_id' => $articleId, 'file_type' => 'xml_jats', 'file_path' => $xmlPath, 'file_size' => strlen($xmlContent), 'mime_type' => 'application/xml']);
         
         return ['success' => true, 'file_path' => $xmlPath, 'download_url' => 'articles/' . $article['article_id'] . '/scielo.xml'];
@@ -164,7 +144,6 @@ class ScieloGenerator {
             $pd = $dom->createElement('pub-date'); $pd->setAttribute('pub-type', 'epub'); $pd->setAttribute('date-type', 'pub'); $pd->setAttribute('publication-format', 'electronic');
             $this->addDateElements($dom, $pd, $article['published_date']); $am->appendChild($pd);
         }
-        
         if (!empty($article['volume_number'])) $am->appendChild($dom->createElement('volume', htmlspecialchars($article['volume_number'])));
         if (!empty($article['issue_number'])) $am->appendChild($dom->createElement('issue', htmlspecialchars($article['issue_number'])));
         $am->appendChild($dom->createElement('elocation-id', htmlspecialchars($article['pages'] ?? 'e' . $article['article_id'])));
@@ -178,17 +157,8 @@ class ScieloGenerator {
         
         if (!empty($article['abstract'])) { $ab = $dom->createElement('abstract'); $ab->appendChild($dom->createElement('p', htmlspecialchars($article['abstract']))); $am->appendChild($ab); }
         if (!empty($article['abstract_en'])) { $tab = $dom->createElement('trans-abstract'); $tab->setAttribute('xml:lang', 'en'); $tab->appendChild($dom->createElement('p', htmlspecialchars($article['abstract_en']))); $am->appendChild($tab); }
-        
-        if (!empty($article['keywords'])) {
-            $kg = $dom->createElement('kwd-group'); $kg->setAttribute('xml:lang', 'es');
-            foreach (explode(',', $article['keywords']) as $k) $kg->appendChild($dom->createElement('kwd', htmlspecialchars(trim($k))));
-            $am->appendChild($kg);
-        }
-        if (!empty($article['keywords_en'])) {
-            $kg = $dom->createElement('kwd-group'); $kg->setAttribute('xml:lang', 'en');
-            foreach (explode(',', $article['keywords_en']) as $k) $kg->appendChild($dom->createElement('kwd', htmlspecialchars(trim($k))));
-            $am->appendChild($kg);
-        }
+        if (!empty($article['keywords'])) { $kg=$dom->createElement('kwd-group'); $kg->setAttribute('xml:lang','es'); foreach(explode(',',$article['keywords']) as $k) $kg->appendChild($dom->createElement('kwd',htmlspecialchars(trim($k)))); $am->appendChild($kg); }
+        if (!empty($article['keywords_en'])) { $kg=$dom->createElement('kwd-group'); $kg->setAttribute('xml:lang','en'); foreach(explode(',',$article['keywords_en']) as $k) $kg->appendChild($dom->createElement('kwd',htmlspecialchars(trim($k)))); $am->appendChild($kg); }
         return $am;
     }
     
@@ -197,10 +167,7 @@ class ScieloGenerator {
         foreach ($authors as $au) {
             $c = $dom->createElement('contrib'); $c->setAttribute('contrib-type', 'author');
             if (!empty($au['orcid'])) { $cid = $dom->createElement('contrib-id', 'https://orcid.org/' . $au['orcid']); $cid->setAttribute('contrib-id-type', 'orcid'); $c->appendChild($cid); }
-            $name = $dom->createElement('name');
-            $name->appendChild($dom->createElement('surname', htmlspecialchars($au['surname'] ?? '')));
-            $name->appendChild($dom->createElement('given-names', htmlspecialchars($au['given_names'] ?? '')));
-            $c->appendChild($name);
+            $name = $dom->createElement('name'); $name->appendChild($dom->createElement('surname', htmlspecialchars($au['surname'] ?? ''))); $name->appendChild($dom->createElement('given-names', htmlspecialchars($au['given_names'] ?? ''))); $c->appendChild($name);
             $aid = !empty($au['affiliation_id']) ? $au['affiliation_id'] : (isset($affs[0]['affiliation_id']) ? $affs[0]['affiliation_id'] : 'aff1');
             $xr = $dom->createElement('xref'); $xr->setAttribute('ref-type', 'aff'); $xr->setAttribute('rid', $aid); $c->appendChild($xr);
             if (!empty($au['email'])) $c->appendChild($dom->createElement('email', $au['email']));
@@ -277,9 +244,8 @@ class ScieloGenerator {
         $h = preg_replace('/<i\s*[^>]*>(.*?)<\/i>/is', '<italic>$1</italic>', $h);
         $h = preg_replace('/<em\s*[^>]*>(.*?)<\/em>/is', '<italic>$1</italic>', $h);
         $h = preg_replace('/<u\s*[^>]*>(.*?)<\/u>/is', '<underline>$1</underline>', $h);
-        
-        $h = preg_replace_callback('/<a\s+[^>]*href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/is', function($matches) {
-            $href = $matches[1]; $text = $matches[2];
+        $h = preg_replace_callback('/<a\s+[^>]*href=[\'"]([^\'"]+)[\'"][^>]*>(.*?)<\/a>/is', function($m) {
+            $href = $m[1]; $text = $m[2];
             if (strpos($href, '#') === 0) {
                 $rid = substr($href, 1); $type = 'other';
                 if (strpos($rid, 'ref') !== false) $type = 'bibr';
@@ -288,7 +254,6 @@ class ScieloGenerator {
             }
             return "<ext-link ext-link-type=\"uri\" xlink:href=\"$href\">$text</ext-link>";
         }, $h);
-        
         $h = preg_replace('/<span\s*[^>]*>(.*?)<\/span>/is', '$1', $h);
         $m = ['&nbsp;'=>'&#160;', '&ndash;'=>'–', '&mdash;'=>'—', '&ldquo;'=>'"', '&rdquo;'=>'"', '&hellip;'=>'…', '&bull;'=>'•'];
         foreach ($m as $e => $c) $h = str_replace($e, $c, $h);
@@ -302,8 +267,7 @@ class ScieloGenerator {
     private function tableHtmlToXml(string $h): string {
         $h = preg_replace('/\s+(style|class|id|align|valign|width|height|border|cellspacing|cellpadding|data-[a-z0-9\-]+)="[^"]*"/i', '', $h);
         libxml_use_internal_errors(true); $tD = new DOMDocument('1.0', 'UTF-8');
-        $tD->loadHTML('<?xml encoding="UTF-8">' . $h, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
-        $xpath = new DOMXPath($tD);
+        $tD->loadHTML('<?xml encoding="UTF-8">' . $h, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD); $xpath = new DOMXPath($tD);
         foreach ($xpath->query('//@*') as $n) if (!in_array($n->nodeName, ['colspan', 'rowspan'])) $n->parentNode->removeAttribute($n->nodeName);
         libxml_clear_errors(); $tags = $tD->getElementsByTagName('table');
         return $tags->length > 0 ? $tD->saveXML($tags->item(0)) : '';
@@ -313,46 +277,60 @@ class ScieloGenerator {
         $d = null; foreach ($ts as $t) if (strcasecmp(trim($t['label'] ?? ''), $l) === 0) { $d=$t; break; }
         if (!$d) return; $tw = $dom->createElement('table-wrap'); $tw->setAttribute('id', 't-'.uniqid()); $p->appendChild($tw);
         $tw->appendChild($dom->createElement('label', htmlspecialchars($d['label'] ?? 'Tabla')));
-        $cap = $dom->createElement('caption');
-        $capT = trim($d['caption'] ?? ($d['title'] ?? '')); if ($capT === '') $capT = $d['label'] ?? 'Tabla';
-        $cap->appendChild($dom->createElement('title', htmlspecialchars($capT)));
-        $tw->appendChild($cap);
+        $cap = $dom->createElement('caption'); $capT = trim($d['caption'] ?? ($d['title'] ?? '')); if ($capT === '') $capT = $d['label'] ?? 'Tabla';
+        $cap->appendChild($dom->createElement('title', htmlspecialchars($capT))); $tw->appendChild($cap);
         if (!empty($d['src']) && ($d['type'] ?? '') === 'image') {
             $g = $dom->createElement('graphic'); $g->setAttribute('xlink:href', htmlspecialchars($d['src'])); $tw->appendChild($g);
         } elseif (!empty($d['html'])) {
             $f = $dom->createDocumentFragment(); $xml = $this->tableHtmlToXml($d['html']);
             if ($xml && @$f->appendXML($xml)) $tw->appendChild($f); else $tw->appendChild($dom->createElement('table'));
         }
-        if (!empty($d['nota'])) { $foot = $dom->createElement('table-wrap-foot'); $fn = $dom->createElement('fn'); $fn->appendChild($dom->createElement('p', 'Nota. ' . htmlspecialchars($d['nota']))); $foot->appendChild($fn); $tw->appendChild($foot); }
+        if (!empty($d['nota'])) { $foot=$dom->createElement('table-wrap-foot'); $fn=$dom->createElement('fn'); $fn->appendChild($dom->createElement('p', 'Nota. '.htmlspecialchars($d['nota']))); $foot->appendChild($fn); $tw->appendChild($foot); }
     }
 
     private function appendFigureByLabel($dom, $p, $l, $fs) {
         $d = null; foreach ($fs as $f) if (strcasecmp(trim($f['label'] ?? ''), $l) === 0) { $d=$f; break; }
         if (!$d) return; $fig = $dom->createElement('fig'); $fig->setAttribute('id', 'f-'.uniqid()); $p->appendChild($fig);
         $fig->appendChild($dom->createElement('label', htmlspecialchars($d['label'] ?? 'Figura')));
-        $cap = $dom->createElement('caption'); 
-        $capT = trim($d['alt'] ?? ($d['caption'] ?? '')); if ($capT === '') $capT = $d['label'] ?? 'Figura';
-        $cap->appendChild($dom->createElement('title', htmlspecialchars($capT)));
-        $fig->appendChild($cap);
+        $cap = $dom->createElement('caption'); $capT = trim($d['alt'] ?? ($d['caption'] ?? '')); if ($capT === '') $capT = $d['label'] ?? 'Figura';
+        $cap->appendChild($dom->createElement('title', htmlspecialchars($capT))); $fig->appendChild($cap);
         $g = $dom->createElement('graphic'); $g->setAttribute('xlink:href', htmlspecialchars($d['src'] ?? '')); $fig->appendChild($g);
-        if (!empty($d['nota'])) $fig->appendChild($dom->createElement('p', 'Nota. ' . htmlspecialchars($d['nota'])));
+        if (!empty($d['nota'])) $fig->appendChild($dom->createElement('p', 'Nota. '.htmlspecialchars($d['nota'])));
     }
 
-    private function createBack($dom, $refs) {
-        $b = $dom->createElement('back');
-        if (!empty($refs)) { $rl = $dom->createElement('ref-list'); $rl->appendChild($dom->createElement('title', 'Referencias')); foreach ($refs as $r) $rl->appendChild($this->createReference($dom, $r)); $b->appendChild($rl); }
-        return $b;
+    private function createBack($dom, $references, $footnotes = []) {
+        $back = $dom->createElement('back');
+        if (!empty($footnotes)) {
+            $fnGroup = $dom->createElement('fn-group');
+            foreach ($footnotes as $i => $fn) {
+                $fnEl = $dom->createElement('fn'); $fid = $fn['id'] ?? ('fn-' . ($i + 1));
+                if (is_string($fid) && strpos($fid, '#') === 0) $fid = substr($fid, 1);
+                $fnEl->setAttribute('id', $fid); $fnEl->appendChild($dom->createElement('p', htmlspecialchars($fn['content'] ?? ''))); $fnGroup->appendChild($fnEl);
+            }
+            $back->appendChild($fnGroup);
+        }
+        if (!empty($references)) {
+            $refList = $dom->createElement('ref-list'); $refList->appendChild($dom->createElement('title', 'Referencias'));
+            foreach ($references as $i => $ref) {
+                if (empty($ref['ref_id']) || !preg_match('/^ref-\d+$/i', $ref['ref_id'])) $ref['ref_id'] = 'ref-' . ($i + 1);
+                $refList->appendChild($this->createReference($dom, $ref));
+            }
+            $back->appendChild($refList);
+        }
+        return $back;
     }
 
     private function createReference($dom, $ref) {
-        $rEl = $dom->createElement('ref'); $rEl->setAttribute('id', $ref['ref_id'] ?? 'ref-'.uniqid());
+        $rEl = $dom->createElement('ref'); $rEl->setAttribute('id', $ref['ref_id']);
         $cit = $dom->createElement('element-citation'); $cit->setAttribute('publication-type', $ref['reference_type'] ?? 'journal');
         if (!empty($ref['authors'])) { $pg = $dom->createElement('person-group'); $pg->setAttribute('person-group-type', 'author'); $cit->appendChild($pg); }
         if (!empty($ref['year'])) $cit->appendChild($dom->createElement('year', $ref['year']));
         if (!empty($ref['title'])) $cit->appendChild($dom->createElement('article-title', htmlspecialchars($ref['title'])));
+        if (!empty($ref['source'])) $cit->appendChild($dom->createElement('source', htmlspecialchars($ref['source'])));
         $rEl->appendChild($cit);
-        $mix = $dom->createElement('mixed-citation'); $txt = ($ref['authors'] ?? "") . ". (" . ($ref['year'] ?? "") . "). " . ($ref['title'] ?? "");
-        $mix->appendChild($dom->createTextNode(trim($txt))); $rEl->appendChild($mix);
+        $mixed = $dom->createElement('mixed-citation');
+        $full = ($ref['authors'] ?? '') . ' (' . ($ref['year'] ?? '') . '). ' . ($ref['title'] ?? '') . '. ' . ($ref['source'] ?? '');
+        $mixed->appendChild($dom->createTextNode(trim($full, ' .'))); $rEl->appendChild($mixed);
         return $rEl;
     }
 
