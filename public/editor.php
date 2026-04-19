@@ -294,6 +294,40 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                         <input type="text" id="auth_aff" placeholder="Afiliación" style="flex:1;"><button class="btn-secondary" onclick="extractTo('auth_aff')">🎯</button>
                     </div>
                     <div style="display:flex; gap:5px;">
+                        <select id="auth_country" style="flex:1; padding:4px; font-size:11px;">
+                            <option value="">País (opcional)</option>
+                            <option value="Perú">🇵🇪 Perú</option>
+                            <option value="Argentina">🇦🇷 Argentina</option>
+                            <option value="Bolivia">🇧🇴 Bolivia</option>
+                            <option value="Brasil">🇧🇷 Brasil</option>
+                            <option value="Chile">🇨🇱 Chile</option>
+                            <option value="Colombia">🇨🇴 Colombia</option>
+                            <option value="Costa Rica">🇨🇷 Costa Rica</option>
+                            <option value="Cuba">🇨🇺 Cuba</option>
+                            <option value="Ecuador">🇪🇨 Ecuador</option>
+                            <option value="El Salvador">🇸🇻 El Salvador</option>
+                            <option value="España">🇪🇸 España</option>
+                            <option value="Guatemala">🇬🇹 Guatemala</option>
+                            <option value="Honduras">🇭🇳 Honduras</option>
+                            <option value="México">🇲🇽 México</option>
+                            <option value="Nicaragua">🇳🇮 Nicaragua</option>
+                            <option value="Panamá">🇵🇦 Panamá</option>
+                            <option value="Paraguay">🇵🇾 Paraguay</option>
+                            <option value="República Dominicana">🇩🇴 República Dominicana</option>
+                            <option value="Uruguay">🇺🇾 Uruguay</option>
+                            <option value="Venezuela">🇻🇪 Venezuela</option>
+                            <option value="Estados Unidos">🇺🇸 Estados Unidos</option>
+                            <option value="Reino Unido">🇬🇧 Reino Unido</option>
+                            <option value="Alemania">🇩🇪 Alemania</option>
+                            <option value="Francia">🇫🇷 Francia</option>
+                            <option value="Italia">🇮🇹 Italia</option>
+                            <option value="Portugal">🇵🇹 Portugal</option>
+                            <option value="Canadá">🇨🇦 Canadá</option>
+                            <option value="China">🇨🇳 China</option>
+                            <option value="Otro">🌍 Otro</option>
+                        </select>
+                    </div>
+                    <div style="display:flex; gap:5px;">
                         <input type="text" id="auth_email" placeholder="Email" style="flex:1;"><button class="btn-secondary" onclick="extractTo('auth_email')">🎯</button>
                     </div>
                     <div style="display:flex; gap:5px;">
@@ -610,6 +644,7 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
             document.getElementById('auth_given').value = a.given_names || '';
             document.getElementById('auth_sur').value = a.surname || '';
             document.getElementById('auth_aff').value = a.affiliation || '';
+            document.getElementById('auth_country').value = a.country || '';
             document.getElementById('auth_email').value = a.email || '';
             document.getElementById('auth_orcid').value = a.orcid || '';
             document.getElementById('auth_corr').checked = a.corresponding == 1;
@@ -626,6 +661,7 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
             let obj = {
                 given_names: given, surname: sur,
                 affiliation: document.getElementById('auth_aff').value,
+                country: document.getElementById('auth_country').value,
                 email: document.getElementById('auth_email').value,
                 orcid: document.getElementById('auth_orcid').value,
                 corresponding: document.getElementById('auth_corr').checked ? 1 : 0
@@ -642,6 +678,7 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
             document.getElementById('auth_given').value = '';
             document.getElementById('auth_sur').value = '';
             document.getElementById('auth_aff').value = '';
+            document.getElementById('auth_country').value = '';
             document.getElementById('auth_email').value = '';
             document.getElementById('auth_orcid').value = '';
             document.getElementById('auth_corr').checked = false;
@@ -652,7 +689,7 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
             lst.innerHTML = customAuthors.map((a, i) => `
                 <div style="background:#f8f9fa; padding:4px; margin-bottom:4px; border:1px solid #ddd;">
                     ${a.given_names} <b>${a.surname}</b> ${a.corresponding ? '(Corr.)' : ''}<br>
-                    <span style="color:gray">${a.affiliation} / ${a.email}</span>
+                    <span style="color:gray">${a.affiliation}${a.country ? ' · ' + a.country : ''} / ${a.email}</span>
                     <div style="margin-top: 3px; display:flex; justify-content: flex-end; gap:5px;">
                         <button onclick="editAuthor(${i})" style="color:#2563eb; cursor:pointer; border:1px solid #ccc; padding:2px 5px; border-radius:3px; background:white;">✏️</button>
                         <button onclick="customAuthors.splice(${i},1); updateAuthorsList();" style="color:red; cursor:pointer; border:1px solid #ccc; padding:2px 5px; border-radius:3px; background:white;">🗑️</button>
@@ -822,6 +859,8 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                 year: document.getElementById('ref_year').value,
                 title: r_title,
                 source: document.getElementById('ref_source').value,
+                pages: document.getElementById('ref_pages').value,
+                doi: document.getElementById('ref_doi').value,
                 url: document.getElementById('ref_url').value
             };
             
@@ -841,6 +880,8 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
             document.getElementById('ref_year').value = '';
             document.getElementById('ref_title').value = '';
             document.getElementById('ref_source').value = '';
+            document.getElementById('ref_pages').value = '';
+            document.getElementById('ref_doi').value = '';
             document.getElementById('ref_url').value = '';
             updateReferencesList();
         }
@@ -850,8 +891,8 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                 let lCountHtml = r.linked_count ? `<span style="background:#dbeafe; color:#1d4ed8; padding:1px 4px; border-radius:3px; font-size:9px; margin-left:5px;">Vinculada ${r.linked_count}x</span>` : '';
                 return `
                 <div style="background:#f8f9fa; padding:4px; margin-bottom:4px; border:1px solid #ddd;">
-                    [${i+1}] ${r.authors} (${r.year}). <b>${r.title}</b>. ${r.source} 
-                    ${r.url ? `<a href="${r.url}" target="_blank">🔗</a>` : ''}
+                    [${i+1}] ${r.authors} (${r.year}). <b>${r.title}</b>. ${r.source} ${r.pages ? 'pp. ' + r.pages : ''} 
+                    ${r.doi ? `DOI: ${r.doi}` : ''} ${r.url ? `<a href="${r.url}" target="_blank">🔗</a>` : ''}
                     ${lCountHtml}
                     <div style="margin-top: 3px; display:flex; justify-content: flex-end; gap:5px;">
                         <button onclick="editReference(${i})" style="color:#2563eb; cursor:pointer; border:1px solid #ccc; padding:2px 5px; border-radius:3px; background:white;">✏️</button>

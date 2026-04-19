@@ -138,7 +138,8 @@ class JATSGenerator {
                         $author['affiliation_id'] = $affId;
                         $tempAffs[$affId] = [
                             'affiliation_id' => $affId,
-                            'institution' => $author['affiliation']
+                            'institution'    => $author['affiliation'],
+                            'country'        => $author['country'] ?? '',
                         ];
                     }
                 }
@@ -253,7 +254,8 @@ class JATSGenerator {
         
         // DOI
         if (!empty($article['doi'])) {
-            $doiElement = $dom->createElement('article-id', htmlspecialchars($article['doi']));
+            $cleanDoi = preg_replace('/^https?:\/\/(dx\.)?doi\.org\//i', '', $article['doi']);
+            $doiElement = $dom->createElement('article-id', htmlspecialchars($cleanDoi));
             $doiElement->setAttribute('pub-id-type', 'doi');
             $articleMeta->appendChild($doiElement);
         }
@@ -412,7 +414,8 @@ class JATSGenerator {
             
             // ORCID
             if (!empty($author['orcid'])) {
-                $contribId = $dom->createElement('contrib-id', 'https://orcid.org/' . $author['orcid']);
+                $orcidClean = preg_replace('/^(https?:\/\/)?(www\.)?orcid\.org\//i', '', $author['orcid']);
+                $contribId = $dom->createElement('contrib-id', 'https://orcid.org/' . $orcidClean);
                 $contribId->setAttribute('contrib-id-type', 'orcid');
                 $contrib->appendChild($contribId);
             }
@@ -429,23 +432,48 @@ class JATSGenerator {
         return $contribGroup;
     }
     
+    private static function countryIso($name) {
+        $map = [
+            'Perú'                => 'PE', 'Peru'               => 'PE',
+            'Argentina'           => 'AR', 'Bolivia'            => 'BO',
+            'Brasil'              => 'BR', 'Brazil'             => 'BR',
+            'Chile'               => 'CL', 'Colombia'           => 'CO',
+            'Costa Rica'          => 'CR', 'Cuba'               => 'CU',
+            'Ecuador'             => 'EC', 'El Salvador'        => 'SV',
+            'España'              => 'ES', 'Spain'              => 'ES',
+            'Guatemala'           => 'GT', 'Honduras'           => 'HN',
+            'México'              => 'MX', 'Mexico'             => 'MX',
+            'Nicaragua'           => 'NI', 'Panamá'             => 'PA',
+            'Paraguay'            => 'PY', 'República Dominicana' => 'DO',
+            'Uruguay'             => 'UY', 'Venezuela'          => 'VE',
+            'Estados Unidos'      => 'US', 'United States'      => 'US',
+            'Reino Unido'         => 'GB', 'United Kingdom'     => 'GB',
+            'Alemania'            => 'DE', 'Germany'            => 'DE',
+            'Francia'             => 'FR', 'France'             => 'FR',
+            'Italia'              => 'IT', 'Italy'              => 'IT',
+            'Portugal'            => 'PT', 'Canadá'             => 'CA',
+            'Canada'              => 'CA', 'China'              => 'CN',
+        ];
+        return $map[trim($name)] ?? 'XX';
+    }
+
     /**
      * Crear elemento de afiliación
      */
     private function createAffiliation($dom, $aff) {
         $affElement = $dom->createElement('aff');
         $affElement->setAttribute('id', $aff['affiliation_id']);
-        
+
         if (!empty($aff['institution'])) {
             $institution = $dom->createElement('institution', htmlspecialchars($aff['institution']));
             $affElement->appendChild($institution);
         }
-        
-        if (!empty($aff['country'])) {
-            $country = $dom->createElement('country', htmlspecialchars($aff['country']));
-            $affElement->appendChild($country);
-        }
-        
+
+        $countryName = !empty($aff['country']) ? $aff['country'] : 'Perú';
+        $country = $dom->createElement('country', htmlspecialchars($countryName));
+        $country->setAttribute('country', self::countryIso($countryName));
+        $affElement->appendChild($country);
+
         return $affElement;
     }
     
@@ -885,6 +913,11 @@ class JATSGenerator {
             $source = $dom->createElement('source', htmlspecialchars($ref['source']));
             $elementCitation->appendChild($source);
         }
+
+        if (!empty($ref['pages'])) {
+            $fpage = $dom->createElement('fpage', htmlspecialchars($ref['pages']));
+            $elementCitation->appendChild($fpage);
+        }
         
         if (!empty($ref['volume'])) {
             $volume = $dom->createElement('volume', $ref['volume']);
@@ -892,7 +925,8 @@ class JATSGenerator {
         }
         
         if (!empty($ref['doi'])) {
-            $doi = $dom->createElement('pub-id', $ref['doi']);
+            $cleanRefDoi = preg_replace('/^https?:\/\/(dx\.)?doi\.org\//i', '', $ref['doi']);
+            $doi = $dom->createElement('pub-id', htmlspecialchars($cleanRefDoi));
             $doi->setAttribute('pub-id-type', 'doi');
             $elementCitation->appendChild($doi);
         }
@@ -908,7 +942,7 @@ class JATSGenerator {
 
         // Mixed citation (requerido por SciELO SPS)
         $mixed = $dom->createElement('mixed-citation');
-        $fullTxt = ($ref['authors'] ?? '') . ' (' . ($ref['year'] ?? '') . '). ' . ($ref['title'] ?? '') . '. ' . ($ref['source'] ?? '');
+        $fullTxt = $ref['full_citation'] ?? (($ref['authors'] ?? '') . ' (' . ($ref['year'] ?? '') . '). ' . ($ref['title'] ?? '') . '. ' . ($ref['source'] ?? ''));
         $mixed->appendChild($dom->createTextNode(trim($fullTxt, ' .')));
         $refElement->appendChild($mixed);
 

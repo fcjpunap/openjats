@@ -365,7 +365,9 @@ class EPUBGenerator {
         if (!empty($references)) {
             $referencesHTML = '<div class="section-block" id="references"><a id="references"></a><h2>Referencias</h2><div class="references-list">';
             foreach ($references as $ref) {
-                $referencesHTML .= '<div class="reference-item" style="margin-bottom: 1em; text-indent: -1.5em; padding-left: 1.5em;"><a id="ref-'.($ref['reference_order'] ?? '').'"></a><a id="'.($ref['ref_id'] ?? '').'"></a><a id="ref-'.($ref['ref_id'] ?? '').'"></a>' . htmlspecialchars($ref['full_citation'] ?? $ref['citation'] ?? '') . '</div>';
+                $citationHtml = htmlspecialchars($ref['full_citation'] ?? $ref['citation'] ?? '');
+                $citationHtml = preg_replace('/(https?:\/\/[^\s]+)/', '<a href="$1" target="_blank" style="color:#0000FF; text-decoration:underline;">$1</a>', $citationHtml);
+                $referencesHTML .= '<div class="reference-item" style="margin-bottom: 1em; text-indent: -1.5em; padding-left: 1.5em;"><a id="ref-'.($ref['reference_order'] ?? '').'"></a><a id="'.($ref['ref_id'] ?? '').'"></a><a id="ref-'.($ref['ref_id'] ?? '').'"></a>' . $citationHtml . '</div>';
             }
             $referencesHTML .= '</div></div>';
         }

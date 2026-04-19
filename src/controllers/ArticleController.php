@@ -635,7 +635,15 @@ class ArticleController {
         }
         
         $articleId = $input['article_id'];
-        
+
+        // Migration: ensure authors.country column exists
+        try {
+            $db = Database::getInstance();
+            $db->query("ALTER TABLE authors ADD COLUMN country VARCHAR(100) DEFAULT NULL");
+        } catch (Exception $e) {
+            // Column already exists — ignore
+        }
+
         // 1. Actualizar artículos base (title, abstract, keywords, etc)
         $updateData = [
             'title' => $input['title'] ?? '',
@@ -660,12 +668,13 @@ class ArticleController {
             $order = 1;
             foreach ($input['custom_authors'] as $auth) {
                 $this->articleModel->addAuthor($articleId, [
-                    'given_names' => $auth['given_names'] ?? '',
-                    'surname' => $auth['surname'] ?? '',
-                    'affiliation' => $auth['affiliation'] ?? '',
-                    'email' => $auth['email'] ?? '',
-                    'orcid' => $auth['orcid'] ?? '',
-                    'corresponding' => $auth['corresponding'] ?? 0,
+                    'given_names'  => $auth['given_names']  ?? '',
+                    'surname'      => $auth['surname']       ?? '',
+                    'affiliation'  => $auth['affiliation']   ?? '',
+                    'country'      => $auth['country']       ?? '',
+                    'email'        => $auth['email']         ?? '',
+                    'orcid'        => $auth['orcid']         ?? '',
+                    'corresponding'=> $auth['corresponding'] ?? 0,
                     'author_order' => $order++
                 ]);
             }
@@ -730,9 +739,16 @@ class ArticleController {
                 if($year) $citationParts[] = "($year)";
                 if($title) $citationParts[] = $title;
                 if($source) $citationParts[] = $source;
-                if($pages) $citationParts[] = $pages;
+                if($pages) $citationParts[] = "pp. " . $pages;
                 
                 $citation = trim(implode('. ', $citationParts));
+                
+                if ($doi) {
+                    $cleanDoi = preg_replace('/^https?:\/\/(dx\.)?doi\.org\//i', '', $doi);
+                    $citation .= '. https://doi.org/' . $cleanDoi;
+                } elseif ($url) {
+                    $citation .= '. ' . $url;
+                }
                 
                 $this->articleModel->addReference([
                     'article_id' => $articleId,

@@ -337,6 +337,7 @@ class PDFGenerator
             foreach ($references as $idx => $ref) {
                 $seqTarget = 'ref-' . trim($ref['reference_order']);
                 $citation = htmlspecialchars($ref['full_citation'] ?? $ref['citation'] ?? '');
+                $citation = preg_replace('/(https?:\/\/[^\s]+)/', '<a href="$1" style="color:#0000FF; text-decoration:underline;">$1</a>', $citation);
 
                 // Set link destination at current Y position
                 if (isset($nativeLinks[$seqTarget])) {

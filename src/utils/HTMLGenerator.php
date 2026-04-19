@@ -538,7 +538,11 @@ class HTMLGenerator {
                     <h2>Referencias</h2>
                     <?php foreach ($references as $ref): ?>
                         <div class="reference" id="ref-<?= htmlspecialchars($ref['reference_order']) ?>">
-                            <?= htmlspecialchars($ref['full_citation']) ?>
+                            <?php 
+                                $citationHtml = htmlspecialchars($ref['full_citation']);
+                                $citationHtml = preg_replace('/(https?:\/\/[^\s]+)/', '<a href="$1" target="_blank" style="color:#0000FF; text-decoration:underline;">$1</a>', $citationHtml);
+                                echo $citationHtml;
+                            ?>
                         </div>
                     <?php endforeach; ?>
                 </div>

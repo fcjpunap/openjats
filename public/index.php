@@ -187,8 +187,17 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
             </div>
 
             <div class="articles-section">
-                <div class="section-header">
+                <div class="section-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
                     <h2>Manuscritos Agrupados (En su Número y Sección)</h2>
+                    <div style="display:flex; gap:10px; font-size:13px;">
+                        <select id="filter_issue" style="padding:6px 10px; border:1px solid #ccc; border-radius:4px; background:#fff; min-width:180px;">
+                            <option value="">Todos los Números</option>
+                        </select>
+                        <select id="filter_section" style="padding:6px 10px; border:1px solid #ccc; border-radius:4px; background:#fff; min-width:180px;">
+                            <option value="">Todas las Secciones</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="generateTOC()" style="background:#10b981; border:1px solid #059669; padding:6px 12px; cursor:pointer;"><span style="margin-right:5px;">📄</span> Índice PDF (Scopus)</button>
+                    </div>
                 </div>
                 <div class="table-responsive">
                     <table id="groupedArticlesTable" class="display" style="width:100%">
@@ -592,13 +601,75 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
                             pageLength: 5,
                             lengthMenu: [[5, 10, 25, 50, -1], [5, 10, 25, 50, "Todos"]]
                         });
+                        
+                        // Configurar listeners para filtros
+                        $('#filter_issue').on('change', function() {
+                            let val = $(this).val();
+                            groupedTable.column(2).search(val ? '^' + $.fn.dataTable.util.escapeRegex(val) + '$' : '', true, false).draw();
+                        });
+                        $('#filter_section').on('change', function() {
+                            let val = $(this).val();
+                            groupedTable.column(3).search(val ? '^' + $.fn.dataTable.util.escapeRegex(val) + '$' : '', true, false).draw();
+                        });
                     }
+
+                    // Actualizar opciones de los selectores dinámicamente según los datos disponibles
+                    let uniqueIssues = [...new Set(groupedData.map(item => item[2]))].sort();
+                    let uniqueSections = [...new Set(groupedData.map(item => item[3]))].sort();
+                    
+                    let issueSel = $('#filter_issue');
+                    let currentIssueVal = issueSel.val();
+                    issueSel.empty().append('<option value="">Todos los Números</option>');
+                    uniqueIssues.forEach(i => issueSel.append(new Option(i, i)));
+                    if (uniqueIssues.includes(currentIssueVal)) { issueSel.val(currentIssueVal); } else { groupedTable.column(2).search('').draw(); }
+                    
+                    let secSel = $('#filter_section');
+                    let currentSecVal = secSel.val();
+                    secSel.empty().append('<option value="">Todas las Secciones</option>');
+                    uniqueSections.forEach(s => secSel.append(new Option(s, s)));
+                    if (uniqueSections.includes(currentSecVal)) { secSel.val(currentSecVal); } else { groupedTable.column(3).search('').draw(); }
+                    
+                    // Re-aplicar filtros si existían
+                    if (issueSel.val()) issueSel.trigger('change');
+                    if (secSel.val()) secSel.trigger('change');
                 }
             } catch(e) {
                 console.error(e);
             }
         }
         
+        function generateTOC() {
+            if (!groupedTable) return;
+            let currentData = groupedTable.rows({ filter: 'applied' }).data().toArray();
+            let ids = currentData.map(row => row[0]); // article_id
+            
+            if (ids.length === 0) {
+                alert("No hay artículos en la lista filtrada.");
+                return;
+            }
+            
+            let form = document.createElement('form');
+            form.method = 'POST';
+            form.action = 'api.php';
+            form.target = '_blank';
+            
+            let actionInput = document.createElement('input');
+            actionInput.type = 'hidden';
+            actionInput.name = 'action';
+            actionInput.value = 'generate_toc_pdf';
+            form.appendChild(actionInput);
+            
+            let idsInput = document.createElement('input');
+            idsInput.type = 'hidden';
+            idsInput.name = 'article_ids';
+            idsInput.value = JSON.stringify(ids);
+            form.appendChild(idsInput);
+            
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+        }
+
         // --- OAI Harvester JS ---
         function showOAIHarvester() {
             // Try fetching configured OAI URL when opening the modal

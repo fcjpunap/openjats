@@ -44,6 +44,23 @@ class RedalycGenerator {
         $footnotes = $this->articleModel->getFootnotes($articleId);
         if (empty($footnotes) && !empty($md['footnotes'])) $footnotes = $md['footnotes'];
 
+        // Si no hay afiliaciones en BD, construirlas desde los autores (incluyendo country)
+        if (empty($affiliations) && !empty($authors)) {
+            $temp = [];
+            foreach ($authors as &$au) {
+                if (!empty($au['affiliation']) && empty($au['affiliation_id'])) {
+                    $id = 'aff-' . crc32($au['affiliation']);
+                    $au['affiliation_id'] = $id;
+                    $temp[$id] = [
+                        'affiliation_id' => $id,
+                        'institution'    => $au['affiliation'],
+                        'country'        => $au['country'] ?? '',
+                    ];
+                }
+            }
+            if (!empty($temp)) $affiliations = array_values($temp);
+        }
+
         $dom = new DOMDocument('1.0', 'UTF-8');
         $dom->formatOutput = true;
         
@@ -95,7 +112,10 @@ class RedalycGenerator {
     
     private function createArticleMeta($dom, $article, $authors, $affiliations) {
         $am = $dom->createElement('article-meta');
-        if (!empty($article['doi'])) $am->appendChild($dom->createElement('article-id', htmlspecialchars($article['doi'])))->setAttribute('pub-id-type', 'doi');
+        if (!empty($article['doi'])) {
+            $cleanDoi = preg_replace('/^https?:\/\/(dx\.)?doi\.org\//i', '', $article['doi']);
+            $am->appendChild($dom->createElement('article-id', htmlspecialchars($cleanDoi)))->setAttribute('pub-id-type', 'doi');
+        }
         
         $tg = $dom->createElement('title-group');
         $tg->appendChild($dom->createElement('article-title', htmlspecialchars($article['title'])));
@@ -144,15 +164,50 @@ class RedalycGenerator {
         $cg = $dom->createElement('contrib-group');
         foreach ($authors as $au) {
             $c = $dom->createElement('contrib'); $c->setAttribute('contrib-type', 'author');
+            if (!empty($au['orcid'])) {
+                $orcidClean = preg_replace('/^(https?:\/\/)?(www\.)?orcid\.org\//i', '', $au['orcid']);
+                $cid = $dom->createElement('contrib-id', 'https://orcid.org/' . $orcidClean);
+                $cid->setAttribute('contrib-id-type', 'orcid');
+                $c->appendChild($cid);
+            }
             $name = $dom->createElement('name'); $name->appendChild($dom->createElement('surname', htmlspecialchars($au['surname'] ?? ''))); $name->appendChild($dom->createElement('given-names', htmlspecialchars($au['given_names'] ?? ''))); $c->appendChild($name);
             $cg->appendChild($c);
         }
         return $cg;
     }
     
+    private static function countryIso($name) {
+        $map = [
+            'Perú'                => 'PE', 'Peru'               => 'PE',
+            'Argentina'           => 'AR', 'Bolivia'            => 'BO',
+            'Brasil'              => 'BR', 'Brazil'             => 'BR',
+            'Chile'               => 'CL', 'Colombia'           => 'CO',
+            'Costa Rica'          => 'CR', 'Cuba'               => 'CU',
+            'Ecuador'             => 'EC', 'El Salvador'        => 'SV',
+            'España'              => 'ES', 'Spain'              => 'ES',
+            'Guatemala'           => 'GT', 'Honduras'           => 'HN',
+            'México'              => 'MX', 'Mexico'             => 'MX',
+            'Nicaragua'           => 'NI', 'Panamá'             => 'PA',
+            'Paraguay'            => 'PY', 'República Dominicana' => 'DO',
+            'Uruguay'             => 'UY', 'Venezuela'          => 'VE',
+            'Estados Unidos'      => 'US', 'United States'      => 'US',
+            'Reino Unido'         => 'GB', 'United Kingdom'     => 'GB',
+            'Alemania'            => 'DE', 'Germany'            => 'DE',
+            'Francia'             => 'FR', 'France'             => 'FR',
+            'Italia'              => 'IT', 'Italy'              => 'IT',
+            'Portugal'            => 'PT', 'Canadá'             => 'CA',
+            'Canada'              => 'CA', 'China'              => 'CN',
+        ];
+        return $map[trim($name)] ?? 'XX';
+    }
+
     private function createAffiliation($dom, $aff) {
         $a = $dom->createElement('aff'); $a->setAttribute('id', $aff['affiliation_id'] ?? 'aff1');
         $a->appendChild($dom->createElement('institution', htmlspecialchars($aff['institution'] ?? '')))->setAttribute('content-type', 'original');
+        $countryName = !empty($aff['country']) ? $aff['country'] : 'Perú';
+        $c = $dom->createElement('country', htmlspecialchars($countryName));
+        $c->setAttribute('country', self::countryIso($countryName));
+        $a->appendChild($c);
         return $a;
     }
     
@@ -265,6 +320,9 @@ class RedalycGenerator {
         if (!empty($ref['year'])) $cit->appendChild($dom->createElement('year', $ref['year']));
         if (!empty($ref['title'])) $cit->appendChild($dom->createElement('article-title', htmlspecialchars($ref['title'])));
         if (!empty($ref['source'])) $cit->appendChild($dom->createElement('source', htmlspecialchars($ref['source'])));
+        if (!empty($ref['pages'])) $cit->appendChild($dom->createElement('fpage', htmlspecialchars($ref['pages'])));
+        if (!empty($ref['doi'])) { $cleanRefDoi = preg_replace('/^https?:\/\/(dx\.)?doi\.org\//i', '', $ref['doi']); $doi=$dom->createElement('pub-id', htmlspecialchars($cleanRefDoi)); $doi->setAttribute('pub-id-type', 'doi'); $cit->appendChild($doi); }
+        if (!empty($ref['url'])) { $ext=$dom->createElement('ext-link', htmlspecialchars($ref['url'])); $ext->setAttribute('ext-link-type', 'uri'); $ext->setAttribute('xlink:href', $ref['url']); $cit->appendChild($ext); }
         $rEl->appendChild($cit);
         
         $mixed = $dom->createElement('mixed-citation');
@@ -281,6 +339,13 @@ class RedalycGenerator {
              $mixed->appendChild($dom->createTextNode(' '));
         }
         $full = '(' . ($ref['year'] ?? '') . '). ' . ($ref['title'] ?? '') . '. ' . ($ref['source'] ?? '');
+        if (!empty($ref['pages'])) $full .= ' pp. ' . $ref['pages'];
+        if (!empty($ref['doi'])) {
+            $cleanDoi = preg_replace('/^https?:\/\/(dx\.)?doi\.org\//i', '', $ref['doi']);
+            $full .= '. https://doi.org/' . $cleanDoi;
+        } elseif (!empty($ref['url'])) {
+            $full .= '. ' . $ref['url'];
+        }
         $mixed->appendChild($dom->createTextNode(trim($full, ' .'))); $rEl->appendChild($mixed);
         return $rEl;
     }
