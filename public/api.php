@@ -347,6 +347,23 @@ try {
             }
             break;
             
+        case 'generate_toc_pdf':
+            if (!isset($_SESSION['user_id'])) {
+                http_response_code(401);
+                echo "No autorizado";
+                exit;
+            }
+            $articleIds = isset($_POST['article_ids']) ? json_decode($_POST['article_ids'], true) : [];
+            if (empty($articleIds)) {
+                http_response_code(400);
+                echo "No hay artículos seleccionados.";
+                exit;
+            }
+            require_once __DIR__ . '/../src/utils/TOCGenerator.php';
+            $generator = new TOCGenerator();
+            $generator->generate($articleIds);
+            exit;
+            
         case 'generate_epub':
             if (!isset($_SESSION['user_id'])) {
                 http_response_code(401);

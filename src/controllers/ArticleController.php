@@ -87,36 +87,78 @@ class ArticleController {
         if ($existingArticleId) {
             $articleId = $existingArticleId;
             
+            $existingMeta = $this->articleModel->getById($articleId);
+            
             $updateData = [
                 'status' => 'processing',
                 'uploaded_by' => $_SESSION['user_id'] ?? null,
             ];
             
-            // Si el HTML tiene título, lo usamos para sobreescribir (o complementar lo de OAI)
-            if (!empty($extractedData['metadata']['title'])) {
+            // Update base metadata ONLY if it is currently empty or if extracted data is very rich
+            if (empty($existingMeta['title']) && !empty($extractedData['metadata']['title'])) {
                 $updateData['title'] = $extractedData['metadata']['title'];
             }
-            if (!empty($extractedData['metadata']['title_en'])) {
+            if (empty($existingMeta['title_en']) && !empty($extractedData['metadata']['title_en'])) {
                 $updateData['title_en'] = $extractedData['metadata']['title_en'];
             }
             
-            $updateData['abstract'] = $extractedData['abstract']['es'] ?? null;
-            $updateData['abstract_en'] = $extractedData['abstract']['en'] ?? null;
-            $updateData['keywords'] = implode(', ', $extractedData['keywords']['es'] ?? []);
-            $updateData['keywords_en'] = implode(', ', $extractedData['keywords']['en'] ?? []);
-            $updateData['received_date'] = $extractedData['metadata']['received_date'] ?? null;
-            $updateData['accepted_date'] = $extractedData['metadata']['accepted_date'] ?? null;
-            $updateData['published_date'] = $extractedData['metadata']['published_date'] ?? null;
+            $absEs = $extractedData['abstract']['es'] ?? null;
+            if ($absEs && empty($existingMeta['abstract'])) $updateData['abstract'] = $absEs;
+            
+            $absEn = $extractedData['abstract']['en'] ?? null;
+            if ($absEn && empty($existingMeta['abstract_en'])) $updateData['abstract_en'] = $absEn;
             
             $this->articleModel->update($articleId, $updateData);
             
-            // Limpiar datos previos si existieran
-            $this->articleModel->deleteAuthors($articleId);
-            $this->articleModel->deleteAffiliations($articleId);
+            // Only delete and overwrite Authors/Affiliations/References IF the extracted HTML actually found them
+            // Otherwise, we keep the duplicated/existing ones intact!
+            if (!empty($extractedData['authors'])) {
+                $this->articleModel->deleteAuthors($articleId);
+                foreach ($extractedData['authors'] as $author) {
+                    $author['article_id'] = $articleId;
+                    $this->articleModel->addAuthor($articleId, $author);
+                }
+            }
+            if (!empty($extractedData['affiliations'])) {
+                $this->articleModel->deleteAffiliations($articleId);
+                foreach ($extractedData['affiliations'] as $aff) {
+                    $aff['article_id'] = $articleId;
+                    $this->articleModel->addAffiliation($articleId, $aff);
+                }
+            }
+            if (!empty($extractedData['references'])) {
+                $this->articleModel->deleteReferences($articleId);
+                foreach ($extractedData['references'] as $ref) {
+                    $ref['article_id'] = $articleId;
+                    $this->articleModel->addReference($ref);
+                }
+            }
+            
+            // ALways replace HTML structural data (Sections, Tables, Figures)
             $this->articleModel->deleteSections($articleId);
             $this->articleModel->deleteTables($articleId);
             $this->articleModel->deleteFigures($articleId);
-            $this->articleModel->deleteReferences($articleId);
+            
+            foreach ($extractedData['sections'] as $section) {
+                $section['article_id'] = $articleId;
+                $this->articleModel->addSection($section);
+            }
+            foreach ($extractedData['tables'] as $table) {
+                $table['article_id'] = $articleId;
+                $this->articleModel->addTable($table);
+            }
+            foreach ($extractedData['figures'] as $figure) {
+                $figure['article_id'] = $articleId;
+                $this->articleModel->addFigure($figure);
+            }
+            
+            // We empty out extracted data arrays so `saveExtractedData` doesn't double insert
+            $extractedData['authors'] = [];
+            $extractedData['affiliations'] = [];
+            $extractedData['sections'] = [];
+            $extractedData['tables'] = [];
+            $extractedData['figures'] = [];
+            $extractedData['references'] = [];
             
         } else {
             // Crear artículo en BD
@@ -453,6 +495,7 @@ class ArticleController {
             'issue_id' => $article['issue_id'],
             'title' => $article['title'] . " (Copia $lang)",
             'title_en' => $article['title_en'],
+            'doi' => $article['doi'] ?? null,
             'abstract' => $article['abstract'],
             'abstract_en' => $article['abstract_en'],
             'keywords' => $article['keywords'],
@@ -491,8 +534,7 @@ class ArticleController {
         $authors = $this->articleModel->getAuthors($sourceId);
         foreach($authors as $a) {
             unset($a['id']);
-            $a['article_id'] = $destId;
-            $this->articleModel->addAuthor($a);
+            $this->articleModel->addAuthor($destId, $a);
         }
         
         $affils = $this->articleModel->getAffiliations($sourceId);
@@ -531,12 +573,7 @@ class ArticleController {
         
         $markup = $this->articleModel->getMarkup($sourceId);
         if ($markup) {
-            $markupData = [
-                'article_id' => $destId,
-                'markup_data' => json_encode($markup['markup_data'], JSON_UNESCAPED_UNICODE),
-                'saved_by' => $_SESSION['user_id'] ?? null
-            ];
-            $this->articleModel->db->insert('article_markup', $markupData);
+            $this->articleModel->saveMarkup($destId, $markup['markup_data'], $_SESSION['user_id'] ?? null);
         }
     }
     

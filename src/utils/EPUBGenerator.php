@@ -288,24 +288,27 @@ class EPUBGenerator {
             $authorsHTML .= '<p style="font-weight:bold;margin:0;">' . htmlspecialchars(($author['given_names'] ?? '') . ' ' . ($author['surname'] ?? '')) . $isCorr . '</p>';
             if (!empty($author['affiliation'])) $authorsHTML .= '<p style="margin:0;font-size:0.9em;color:#555;">' . htmlspecialchars($author['affiliation']) . '</p>';
             if (!empty($author['email'])) $authorsHTML .= '<p style="margin:0;font-size:0.9em;color:#555;">Email: ' . htmlspecialchars($author['email']) . '</p>';
-            if (!empty($author['orcid'])) $authorsHTML .= '<p style="margin:0;font-size:0.9em;color:#555;">ORCID: ' . htmlspecialchars($author['orcid']) . '</p>';
+            if (!empty($author['orcid'])) {
+                $orcidClean = preg_replace('/^(https?:\/\/)?(www\.)?orcid\.org\//i', '', $author['orcid']);
+                $authorsHTML .= '<p style="margin:0;font-size:0.9em;color:#555;">ORCID: <a href="https://orcid.org/' . htmlspecialchars($orcidClean) . '" style="color:#555; text-decoration:none;">https://orcid.org/' . htmlspecialchars($orcidClean) . '</a></p>';
+            }
             $authorsHTML .= '</div>';
         }
-        $authorsHTML .= '<p style="font-size:0.8em;color:#777;margin-top:1em;">* Autor de correspondencia</p>';
+        $authorsHTML .= '<p style="font-size:0.8em;color:#777;margin-top:1em;">* Autor de correspondencia / Corresponding author</p>';
 
         $metaHTML = '<div class="article-meta" style="margin-top:2em;padding-top:1em;border-top:1px solid #ccc;font-size:0.9em;">';
-        if (!empty($article['received_date'])) $metaHTML .= '<p><b>Recibido:</b> ' . htmlspecialchars($article['received_date']) . '</p>';
-        if (!empty($article['accepted_date'])) $metaHTML .= '<p><b>Aceptado:</b> ' . htmlspecialchars($article['accepted_date']) . '</p>';
-        if (!empty($article['published_date'])) $metaHTML .= '<p><b>Publicado:</b> ' . htmlspecialchars($article['published_date']) . '</p>';
+        if (!empty($article['received_date'])) $metaHTML .= '<p><b>Recibido / Received:</b> ' . htmlspecialchars($article['received_date']) . '</p>';
+        if (!empty($article['accepted_date'])) $metaHTML .= '<p><b>Aceptado / Accepted:</b> ' . htmlspecialchars($article['accepted_date']) . '</p>';
+        if (!empty($article['published_date'])) $metaHTML .= '<p><b>Publicado / Published:</b> ' . htmlspecialchars($article['published_date']) . '</p>';
         $metaHTML .= '</div>';
 
         $journalHTML = '<div class="journal-info" style="text-align:center;margin-bottom:2em;border-bottom:2px solid #2c3e50;padding-bottom:1em;">';
         $journalHTML .= '<h3>' . htmlspecialchars($article['journal_title'] ?? 'Revista Académica') . '</h3>';
         $journalHTML .= '<p>ISSN: ' . htmlspecialchars($article['issn'] ?? '') . ' | Vol. ' . htmlspecialchars($article['volume_number'] ?? '') . ', Núm. ' . htmlspecialchars($article['issue_number'] ?? '') . ' (' . htmlspecialchars($article['year'] ?? '') . ')</p>';
-        if (!empty($article['journal_url'])) $journalHTML .= '<p>URL: <a href="'.htmlspecialchars($article['journal_url']).'">' . htmlspecialchars($article['journal_url']) . '</a></p>';
+        if (!empty($article['journal_url'])) $journalHTML .= '<p>Journal homepage: <a href="'.htmlspecialchars($article['journal_url']).'">' . htmlspecialchars($article['journal_url']) . '</a></p>';
         $cleanDoi = preg_replace('/^https?:\/\/(dx\.)?doi\.org\//i', '', $article['doi'] ?? '');
         if (!empty($cleanDoi)) $journalHTML .= '<p>DOI: <a href="https://doi.org/'.htmlspecialchars($cleanDoi).'">' . htmlspecialchars('https://doi.org/' . $cleanDoi) . '</a></p>';
-        $journalHTML .= '<p>Licencia CC BY 4.0</p>';
+        $journalHTML .= '<p>This work is licensed under a Creative Commons Attribution 4.0 International License.</p>';
         $journalHTML .= '</div>';
         
         $abstractHTML = '';
@@ -388,7 +391,7 @@ class EPUBGenerator {
     <div class="article-content">
         <div class="article-header">
             ' . $journalHTML . '
-            ' . (!empty($article['article_type']) ? '<div class="article-type" style="text-transform:uppercase;color:#888;font-weight:bold;margin-bottom:1em;">Sección: ' . htmlspecialchars($article['article_type']) . '</div>' : '') . '
+            ' . (!empty($article['article_type']) ? '<div class="article-type" style="text-transform:uppercase;color:#888;font-weight:bold;margin-bottom:1em;">Sección / Section: ' . htmlspecialchars($article['article_type']) . '</div>' : '') . '
             <h1>' . htmlspecialchars($article['title']) . '</h1>
             ' . (!empty($article['title_en']) ? '<h2 style="color:#555;font-style:italic;">' . htmlspecialchars($article['title_en']) . '</h2>' : '') . '
             <div class="authors">' . $authorsHTML . '</div>

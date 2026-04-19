@@ -40,8 +40,12 @@ class JATSPDF extends TCPDF {
         $html = '<table width="100%" style="border-bottom:1px solid #777; padding-bottom:3px; font-family: \'EB Garamond\', Garamond, times, serif;"><tr>';
         $html .= '<td width="15%" align="left"><img src="'.$logoLeft.'" height="35"></td>';
         $html .= '<td width="70%" align="center" style="font-size:7pt; line-height:1.2;"><strong>' . $jNameHtml . '</strong><br/>';
-        $html .= 'ISSN Print: ' . $issnPrint . ' | ISSN Online: ' . $issnOnline . '<br/>' . $url . '<br/>';
-        $html .= 'Vol. ' . $vol . ', Núm. ' . $iss . ' (' . $year . '), ' . $pag . ' | DOI: ' . $doi . '<br/>Licencia CC BY 4.0</td>';
+        
+        $cleanDoi = preg_replace('/^https?:\/\/(dx\.)?doi\.org\//i', '', $doi);
+        $doiLink = 'https://doi.org/' . $cleanDoi;
+
+        $html .= 'ISSN Print: ' . $issnPrint . ' | ISSN Online: ' . $issnOnline . '<br/>Journal homepage: <a href="' . $url . '" style="color:#000000; text-decoration:none;">' . $url . '</a><br/>';
+        $html .= 'Vol. ' . $vol . ', Núm. ' . $iss . ' (' . $year . '), ' . $pag . ' | DOI: <a href="' . $doiLink . '" style="color:#000000; text-decoration:none;">' . $doi . '</a><br/>This work is licensed under a Creative Commons Attribution 4.0 International License.</td>';
         $html .= '<td width="15%" align="right"><img src="'.$logoRight.'" height="35"></td>';
         $html .= '</tr></table>';
         
@@ -52,7 +56,7 @@ class JATSPDF extends TCPDF {
     public function Footer() {
         $this->SetY(-15);
         $this->SetFont('helvetica', 'I', 8);
-        $this->Cell(0, 10, 'Página '.$this->getAliasNumPage().'/'.$this->getAliasNbPages(), 0, false, 'C', 0, '', 0, false, 'T', 'M');
+        $this->Cell(0, 10, $this->getAliasNumPage().'/'.$this->getAliasNbPages(), 0, false, 'C', 0, '', 0, false, 'T', 'M');
     }
 }
 
@@ -124,7 +128,7 @@ class PDFGenerator {
         if (!empty($article['article_type'])) {
             $pdf->SetFont('times', 'B', 10);
             $pdf->SetTextColor(100, 100, 100);
-            $pdf->Cell(0, 5, 'Sección: ' . mb_strtoupper($article['article_type']), 0, 1, 'L');
+            $pdf->Cell(0, 5, 'Sección / Section: ' . mb_strtoupper($article['article_type']), 0, 1, 'L');
             $pdf->Ln(2);
         }
 
@@ -158,7 +162,10 @@ class PDFGenerator {
             $subText = '';
             if ($author['affiliation']) $subText .= htmlspecialchars($author['affiliation']) . " | ";
             if ($author['email']) $subText .= "Email: " . htmlspecialchars($author['email']) . " | ";
-            if ($author['orcid']) $subText .= '<img src="https://orcid.org/sites/default/files/images/orcid_16x16.png" height="10" /> ORCID: <a href="https://orcid.org/'.htmlspecialchars($author['orcid']).'" style="color:black;text-decoration:none;">' . htmlspecialchars($author['orcid']).'</a>';
+            if ($author['orcid']) {
+                $orcidClean = preg_replace('/^(https?:\/\/)?(www\.)?orcid\.org\//i', '', $author['orcid']);
+                $subText .= '<img src="https://orcid.org/sites/default/files/images/orcid_16x16.png" height="10" /> ORCID: <a href="https://orcid.org/'.htmlspecialchars($orcidClean).'" style="color:black;text-decoration:none;">' . htmlspecialchars($orcidClean).'</a>';
+            }
             
             $subText = rtrim($subText, " | ");
             if($subText) {

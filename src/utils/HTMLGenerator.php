@@ -340,11 +340,12 @@ class HTMLGenerator {
                 ?>
                 <br>
                 ISSN Print: <?= htmlspecialchars($article['issn_print'] ?? 'XXXX-XXXX') ?> | ISSN Online: <?= htmlspecialchars($article['issn'] ?? 'XXXX-XXXX') ?><br>
-                <?= htmlspecialchars($article['journal_url'] ?? '') ?><br>
+                Journal homepage: <a href="<?= htmlspecialchars($article['journal_url'] ?? '#') ?>" style="color:#333; text-decoration:none;"><?= htmlspecialchars($article['journal_url'] ?? '') ?></a><br>
                 <?php if ($vol && $issue): ?>
                     Vol. <?= htmlspecialchars($vol) ?>, Núm. <?= htmlspecialchars($issue) ?> (<?= $year ?>)
                 <?php endif; ?>
-                | DOI: <?= htmlspecialchars($article['doi'] ?? '') ?> <br/> Licencia CC BY 4.0
+                <?php $cleanDoiHeader = preg_replace('/^https?:\/\/(dx\.)?doi\.org\//i', '', $article['doi'] ?? ''); ?>
+                | DOI: <a href="https://doi.org/<?= htmlspecialchars($cleanDoiHeader) ?>" style="color:#333; text-decoration:none;">https://doi.org/<?= htmlspecialchars($cleanDoiHeader) ?></a> <br/> This work is licensed under a Creative Commons Attribution 4.0 International License.
             </div>
             <div style="width:20%; text-align:right;">
                 <img src="https://fcjp.derecho.unap.edu.pe/catg/jats-assistant/public/logofcjp.png" style="max-height:80px; max-width:100%;" alt="Logo Derecha">
@@ -354,7 +355,7 @@ class HTMLGenerator {
         <div class="article-header">
             <?php if (!empty($article['article_type'])): ?>
                 <div style="font-size:14px; color:#666; margin-bottom:10px; font-weight:bold; text-transform:uppercase;">
-                    Sección: <?= htmlspecialchars($article['article_type'] ?? '') ?>
+                    Sección / Section: <?= htmlspecialchars($article['article_type'] ?? '') ?>
                 </div>
             <?php endif; ?>
 
@@ -380,10 +381,11 @@ class HTMLGenerator {
                             <div class="affiliation"><?= htmlspecialchars($author['affiliation'] ?? '') ?></div>
                         <?php endif; ?>
                         <?php if (!empty($author['orcid'])): ?>
+                            <?php $orcidClean = preg_replace('/^(https?:\/\/)?(www\.)?orcid\.org\//i', '', $author['orcid'] ?? ''); ?>
                             <div class="orcid">
                                 <img src="https://orcid.org/sites/default/files/images/orcid_16x16.png" style="height:14px; vertical-align:middle; margin-right:4px;" alt="ORCID">
-                                <a href="https://orcid.org/<?= htmlspecialchars($author['orcid'] ?? '') ?>" target="_blank" style="color:inherit; text-decoration:none;">
-                                    <?= htmlspecialchars($author['orcid'] ?? '') ?>
+                                <a href="https://orcid.org/<?= htmlspecialchars($orcidClean) ?>" target="_blank" style="color:inherit; text-decoration:none;">
+                                    <?= htmlspecialchars($orcidClean) ?>
                                 </a>
                             </div>
                         <?php endif; ?>
@@ -396,20 +398,13 @@ class HTMLGenerator {
             
             <div class="article-meta">
                 <?php if ($article['received_date']): ?>
-                    <span>Recibido: <?= date('d/m/Y', strtotime($article['received_date'])) ?></span>
+                    <span>Recibido / Received: <?= date('d/m/Y', strtotime($article['received_date'])) ?></span>
                 <?php endif; ?>
                 <?php if ($article['accepted_date']): ?>
-                    <span>Aceptado: <?= date('d/m/Y', strtotime($article['accepted_date'])) ?></span>
+                    <span>Aceptado / Accepted: <?= date('d/m/Y', strtotime($article['accepted_date'])) ?></span>
                 <?php endif; ?>
                 <?php if ($article['published_date']): ?>
-                    <span>Publicado: <?= date('d/m/Y', strtotime($article['published_date'])) ?></span>
-                <?php endif; ?>
-                <?php if ($article['doi']): 
-                    $cleanDoi = preg_replace('/^https?:\/\/(dx\.)?doi\.org\//i', '', $article['doi']);
-                ?>
-                    <span>DOI: <a href="https://doi.org/<?= htmlspecialchars($cleanDoi) ?>" target="_blank">
-                        <?= htmlspecialchars('https://doi.org/' . $cleanDoi) ?>
-                    </a></span>
+                    <span>Publicado / Published: <?= date('d/m/Y', strtotime($article['published_date'])) ?></span>
                 <?php endif; ?>
             </div>
         </div>
@@ -563,10 +558,10 @@ class HTMLGenerator {
         </div>
         
         <footer>
-            <p>&copy; <?= $year ?> <?= htmlspecialchars($journal) ?>. Todos los derechos reservados.</p>
-            <?php if ($article['doi']): ?>
-                <p>DOI: <?= htmlspecialchars($article['doi']) ?></p>
-            <?php endif; ?>
+            <p>Copyright &copy; <?= $year ?> <?= htmlspecialchars(implode(', ', array_map(function($a) {
+                return $a['given_names'] . ' ' . $a['surname'];
+            }, $authors))) ?>.</p>
+            <p>This work is licensed under a Creative Commons Attribution 4.0 International License.</p>
         </footer>
     </div>
 </body>
