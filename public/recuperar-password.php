@@ -24,10 +24,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Generar token seguro
                 $token = bin2hex(random_bytes(32));
                 
-                // NOTA: Aquí iría la lógica para guardar el token en la base de datos e invocar 
-                // la función de envío de correos (ej. PHPMailer o mail())
-                
-                $success = "Si el correo está registrado, se han enviado las instrucciones de recuperación.";
+                // Asegurarse que las columnas existan, si fallan atrapar el error
+                try {
+                    $stmtUpdate = $pdo->prepare("UPDATE users SET reset_token = :token, reset_token_expires = DATE_ADD(NOW(), INTERVAL 1 HOUR) WHERE id = :id");
+                    $stmtUpdate->execute([
+                        'token' => $token,
+                        'id' => $user['id']
+                    ]);
+                    
+                    // Enviar correo
+                    $resetLink = $config['app']['url'] . "/reset-password.php?token=" . $token;
+                    
+                    $to = $email;
+                    $subject = "Recuperación de contraseña - OpenJATS";
+                    $message = "Hola,\n\nHas solicitado restablecer tu contraseña.\n\nPor favor, haz clic en el siguiente enlace o cópialo y pégalo en tu navegador (válido por 1 hora):\n$resetLink\n\nSi no has solicitado este cambio, ignora este mensaje.\n\nSaludos,\nEquipo OpenJATS";
+                    $headers = "From: noreply@" . parse_url($config['app']['url'], PHP_URL_HOST) . "\r\n" .
+                               "Reply-To: noreply@" . parse_url($config['app']['url'], PHP_URL_HOST) . "\r\n" .
+                               "X-Mailer: PHP/" . phpversion();
+                    
+                    if (mail($to, $subject, $message, $headers)) {
+                        $success = "Si el correo está registrado, se han enviado las instrucciones de recuperación.";
+                    } else {
+                        $error = "Hubo un problema al intentar enviar el correo. Por favor, contacte con el administrador.";
+                    }
+                } catch (PDOException $e) {
+                    $error = "Error al guardar el token de recuperación. Asegúrese de que las columnas 'reset_token' y 'reset_token_expires' existan en la tabla 'users'. " . $e->getMessage();
+                }
             } else {
                 // Por seguridad, no especificamos si el correo existe o no
                 $success = "Si el correo está registrado, se han enviado las instrucciones de recuperación.";
