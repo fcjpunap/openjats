@@ -640,9 +640,13 @@ class ArticleController {
         try {
             $db = Database::getInstance();
             $db->query("ALTER TABLE authors ADD COLUMN country VARCHAR(100) DEFAULT NULL");
-        } catch (Exception $e) {
-            // Column already exists — ignore
-        }
+        } catch (Exception $e) {}
+
+        // Migration: ensure year column in article_references is large enough
+        try {
+            $db = Database::getInstance();
+            $db->query("ALTER TABLE article_references MODIFY COLUMN year VARCHAR(255)");
+        } catch (Exception $e) {}
 
         // 1. Actualizar artículos base (title, abstract, keywords, etc)
         $updateData = [

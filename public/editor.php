@@ -386,7 +386,10 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
             <div class="sidebar-section">
                 <h3>📚 Referencias (Inteligente)</h3>
                 <p style="font-size:11px; margin-bottom:5px;">Selecciona una referencia y presiona el botón para rellenar las cajas:</p>
-                <button class="btn-secondary" onclick="analyzeReferences()" style="width:100%; margin-bottom:5px;">🔍 Extraer Referencia Seleccionada</button>
+                <div style="display:flex; gap:5px; margin-bottom:5px;">
+                    <button class="btn-secondary" onclick="analyzeReferences()" style="flex:1;">🔍 Extraer (Individual)</button>
+                    <button class="btn-secondary" onclick="analyzeMultipleReferences()" style="flex:1;">🔍 Extraer (Múltiple)</button>
+                </div>
                 <div style="display:flex; gap:5px; margin-bottom:10px;">
                     <button class="btn-secondary" onclick="linkCitations()" style="flex:1; background-color:#eff6ff; border-color:#bfdbfe; color:#1e40af; font-size:11px;">🔗 Vincular Citas Inteligente</button>
                     <button class="btn-secondary" onclick="autoLinkFootnotes()" style="flex:1; background-color:#fefce8; border-color:#fef08a; color:#854d0e; font-size:11px;">🔗 Vincular Notas [1] Inteligente</button>
@@ -532,26 +535,64 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
             return html;
         }
 
+        function showSelectModal(title, items, callback) {
+            let existing = document.getElementById('selectItemModal');
+            if(existing) existing.remove();
+            
+            let html = `
+            <div id="selectItemModal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; display:flex; align-items:center; justify-content:center;">
+                <div style="background:white; padding:20px; border-radius:8px; width:80%; max-width:600px; max-height:80vh; display:flex; flex-direction:column; font-family:sans-serif;">
+                    <h3 style="margin-top:0; font-size:18px;">${title}</h3>
+                    <div style="overflow-y:auto; flex:1; margin-bottom:15px; border:1px solid #ddd; padding:10px;">
+                        ${items.map((item, i) => `
+                            <div style="padding:8px; border-bottom:1px solid #eee; display:flex; justify-content:space-between; align-items:center;">
+                                <div style="flex:1; font-size:13px; line-height:1.4;">
+                                    <strong>[${i+1}]</strong> ${item.text}
+                                </div>
+                                <button class="btn-primary" onclick="document.getElementById('selectItemModal').callback(${i})" style="margin-left:10px; cursor:pointer; padding:5px 10px;">Vincular</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div style="text-align:right;">
+                        <button class="btn-secondary" onclick="document.getElementById('selectItemModal').remove()" style="cursor:pointer; padding:5px 10px;">Cancelar</button>
+                    </div>
+                </div>
+            </div>`;
+            document.body.insertAdjacentHTML('beforeend', html);
+            document.getElementById('selectItemModal').callback = function(index) {
+                this.remove();
+                callback(index);
+            };
+        }
+
         // TOOL: Manual Link Citation
         function manualLinkCitation() {
             let sel = window.getSelection();
             if (sel.rangeCount > 0 && !sel.isCollapsed) {
                 if (customReferences.length === 0) return alert("Primero debes añadir referencias a la lista en la pestaña Referencias.");
-                let options = customReferences.map((r, i) => `${i+1}: ${r.authors} (${r.year||'S.F.'}) - ${r.title.substring(0,40)}...`).join("\n");
-                let num = prompt("Selecciona el N° exacto de la referencia a vincular:\n\n" + options, "1");
-                if (num) {
-                    let refIdx = parseInt(num) - 1;
-                    if (customReferences[refIdx]) {
-                        if(!customReferences[refIdx].linked_count) customReferences[refIdx].linked_count = 0;
-                        customReferences[refIdx].linked_count++;
-                        let selectedText = sel.toString();
-                        let refIdNum = num; // Maintain 1-indexed visual ID for export linking matching
+                
+                let items = customReferences.map(r => ({
+                    text: `${r.authors} (${r.year||'S.F.'}) - ${r.title}`
+                }));
+                
+                let selectedRange = sel.getRangeAt(0).cloneRange(); // Guardar el rango
+                
+                showSelectModal("Selecciona la referencia a vincular", items, function(index) {
+                    let r = customReferences[index];
+                    if (r) {
+                        if(!r.linked_count) r.linked_count = 0;
+                        r.linked_count++;
+                        
+                        let newSel = window.getSelection();
+                        newSel.removeAllRanges();
+                        newSel.addRange(selectedRange);
+                        
+                        let selectedText = newSel.toString();
+                        let refIdNum = index + 1;
                         document.execCommand("insertHTML", false, `<a href="#ref-${refIdNum}" class="citation-link" data-rid="ref-${refIdNum}" style="color:#2563eb; text-decoration:none; border-bottom:1px dotted #2563eb;">${selectedText}</a>`);
                         updateReferencesList();
-                    } else {
-                        alert("Número de referencia no válido.");
                     }
-                }
+                });
             } else {
                 alert("Primero debes seleccionar el texto en el editor de contenido, y luego presionar el botón '🔗 Ref'.");
             }
@@ -562,18 +603,25 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
             let sel = window.getSelection();
             if (sel.rangeCount > 0 && !sel.isCollapsed) {
                 if (customFootnotes.length === 0) return alert("Primero debes añadir notas al pie en la pestaña Nota Pie.");
-                let options = customFootnotes.map((f, i) => `${i+1}: ${f.text.substring(0,50)}...`).join("\n");
-                let num = prompt("Selecciona el N° de la nota al pie a vincular:\n\n" + options, "1");
-                if (num) {
-                    let fnIdx = parseInt(num) - 1;
-                    if (customFootnotes[fnIdx]) {
-                        let fnIdNum = customFootnotes[fnIdx].fn_id;
-                        let selectedText = sel.toString();
+                
+                let items = customFootnotes.map(f => ({
+                    text: f.text
+                }));
+                
+                let selectedRange = sel.getRangeAt(0).cloneRange(); // Guardar el rango
+                
+                showSelectModal("Selecciona la nota al pie a vincular", items, function(index) {
+                    let f = customFootnotes[index];
+                    if (f) {
+                        let newSel = window.getSelection();
+                        newSel.removeAllRanges();
+                        newSel.addRange(selectedRange);
+                        
+                        let fnIdNum = f.fn_id;
+                        let selectedText = newSel.toString();
                         document.execCommand("insertHTML", false, `<sup><a href="#fn-${fnIdNum}" class="fn-link" data-fnid="fn-${fnIdNum}" style="color:#d97706; text-decoration:none;">${selectedText}</a></sup>`);
-                    } else {
-                        alert("Número de nota al pie no válido.");
                     }
-                }
+                });
             } else {
                 alert("Primero debes seleccionar el texto en el editor de contenido, y luego presionar el botón '🔗 Nota pie'.");
             }
@@ -832,6 +880,85 @@ $userName = htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 
             document.getElementById('ref_pages').value = pages;
             document.getElementById('ref_doi').value = links.doi;
             document.getElementById('ref_url').value = links.url;
+        }
+
+        function analyzeMultipleReferences() {
+            const sel = window.getSelection().toString().trim();
+            if(!sel) return alert("Selecciona el texto agrupado de TODAS las referencias juntas para extraerlas.");
+            
+            let refLines = sel.split(/\n+/);
+            let refCount = 0;
+            refLines.forEach(line => {
+                line = line.trim();
+                if (line.length < 10) return;
+                
+                let cleanLine = line.replace(/^(\[\d+\]|\d+\.|-|\*)\s*/, '').trim();
+                
+                let year = cleanLine.match(/\((\d{4}[a-z]?)\)/);
+                year = year ? year[1] : '';
+                
+                let authors = '';
+                let title = '';
+                let source = '';
+                let pages = '';
+                
+                let partes = [];
+                if(year) partes = cleanLine.split(`(${year})`);
+                
+                if(partes.length >= 2) {
+                    authors = partes[0].trim();
+                    let resto = partes[1].split('.');
+                    if(resto.length >= 2) {
+                        title = resto[0].trim();
+                        let srcFull = resto.slice(1).join('.').replace(/(http(.*))|doi:.*$/i, '').trim();
+                        let ppMatch = srcFull.match(/,\s*(\d+\s*-\s*\d+)/);
+                        if(ppMatch) {
+                            pages = ppMatch[1];
+                            source = srcFull.replace(/,\s*\d+\s*-\s*\d+/, '').replace(/^,/, '').trim();
+                        } else {
+                            source = srcFull;
+                        }
+                    } else {
+                        title = partes[1].replace(/(http(.*))|doi:.*$/i, '').trim();
+                    }
+                } else {
+                    let firstDot = cleanLine.indexOf('.');
+                    if (firstDot > 10) {
+                        authors = cleanLine.substring(0, firstDot).trim();
+                        title = cleanLine.substring(firstDot + 1).replace(/(http(.*))|doi:.*$/i, '').trim();
+                    } else {
+                        title = cleanLine; 
+                    }
+                }
+                
+                authors = authors.replace(/\.$/, '').trim();
+                title = title.replace(/^\.$/, '').trim();
+                source = source.replace(/\.$/, '').trim();
+                
+                let links = extractDoiUrl(cleanLine);
+                
+                let obj = {
+                    authors: authors,
+                    year: year,
+                    title: title,
+                    source: source,
+                    pages: pages,
+                    doi: links.doi,
+                    url: links.url
+                };
+                
+                if(obj.authors || obj.title) {
+                    customReferences.push(obj);
+                    refCount++;
+                }
+            });
+            
+            if(refCount > 0) {
+                updateReferencesList();
+                alert(`✅ Se extrajeron ${refCount} referencias múltiples.`);
+            } else {
+                alert("No se detectaron referencias válidas en la selección.");
+            }
         }
 
         let editingReferenceIndex = -1;

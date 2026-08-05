@@ -377,8 +377,15 @@ class HTMLGenerator {
                                 <span style="margin-left:5px;">✉</span>
                             <?php endif; ?>
                         </div>
-                        <?php if (!empty($author['affiliation'])): ?>
-                            <div class="affiliation"><?= htmlspecialchars($author['affiliation'] ?? '') ?></div>
+                        <?php if (!empty($author['affiliation']) || !empty($author['country'])): ?>
+                            <div class="affiliation">
+                                <?php 
+                                    $affParts = [];
+                                    if (!empty($author['affiliation'])) $affParts[] = $author['affiliation'];
+                                    if (!empty($author['country'])) $affParts[] = $author['country'];
+                                    echo htmlspecialchars(implode(', ', $affParts));
+                                ?>
+                            </div>
                         <?php endif; ?>
                         <?php if (!empty($author['orcid'])): ?>
                             <?php $orcidClean = preg_replace('/^(https?:\/\/)?(www\.)?orcid\.org\//i', '', $author['orcid'] ?? ''); ?>

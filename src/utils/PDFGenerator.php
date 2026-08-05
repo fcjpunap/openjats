@@ -168,8 +168,12 @@ class PDFGenerator
             $pdf->writeHTMLCell(0, 5, '', '', '<div style="text-align:center;"><b>' . $authorText . '</b></div>', 0, 1, 0, true, 'C', true);
 
             $subText = '';
-            if ($author['affiliation'])
-                $subText .= htmlspecialchars($author['affiliation']) . " | ";
+            $affParts = [];
+            if (!empty($author['affiliation'])) $affParts[] = htmlspecialchars($author['affiliation']);
+            if (!empty($author['country'])) $affParts[] = htmlspecialchars($author['country']);
+            if (count($affParts) > 0) {
+                $subText .= implode(', ', $affParts) . " | ";
+            }
             if ($author['email'])
                 $subText .= "Email: " . htmlspecialchars($author['email']) . " | ";
             if ($author['orcid']) {

@@ -286,7 +286,12 @@ class EPUBGenerator {
             $isCorr = (!empty($author['is_corresponding']) || !empty($author['corresponding'])) ? ' <sup>*</sup>' : '';
             $authorsHTML .= '<div class="author" style="margin-bottom:1em;">';
             $authorsHTML .= '<p style="font-weight:bold;margin:0;">' . htmlspecialchars(($author['given_names'] ?? '') . ' ' . ($author['surname'] ?? '')) . $isCorr . '</p>';
-            if (!empty($author['affiliation'])) $authorsHTML .= '<p style="margin:0;font-size:0.9em;color:#555;">' . htmlspecialchars($author['affiliation']) . '</p>';
+            if (!empty($author['affiliation']) || !empty($author['country'])) {
+                $aff_parts = [];
+                if (!empty($author['affiliation'])) $aff_parts[] = $author['affiliation'];
+                if (!empty($author['country'])) $aff_parts[] = $author['country'];
+                $authorsHTML .= '<p style="margin:0;font-size:0.9em;color:#555;">' . htmlspecialchars(implode(', ', $aff_parts)) . '</p>';
+            }
             if (!empty($author['email'])) $authorsHTML .= '<p style="margin:0;font-size:0.9em;color:#555;">Email: ' . htmlspecialchars($author['email']) . '</p>';
             if (!empty($author['orcid'])) {
                 $orcidClean = preg_replace('/^(https?:\/\/)?(www\.)?orcid\.org\//i', '', $author['orcid']);
