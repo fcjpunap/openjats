@@ -391,6 +391,9 @@ class PDFGenerator
                 $html .= '<img src="' . $this->resolveInternalPath($t['src']) . '" width="450" />';
             } else {
                 $tableHtml = $t['html'] ?? $t['html_content'] ?? $t['content'] ?? '';
+                // Eliminar anchos fijos para evitar overflow en TCPDF
+                $tableHtml = preg_replace('/\bwidth=["\'][^"\']*["\']/i', '', $tableHtml);
+                $tableHtml = preg_replace('/(style=["\'][^"\']*)\bwidth\s*:\s*[^;"]+;?([^"\']*["\'])/i', '$1$2', $tableHtml);
                 // Limpiar estilos previos
                 $tableHtml = preg_replace('/border=["\']\d+["\']/i', 'border="0"', $tableHtml);
                 // Inyectar estilos APA 7
@@ -483,6 +486,10 @@ class PDFGenerator
                     $html .= '<img src="' . $this->resolveInternalPath($t['src']) . '" width="450" />';
                 } else {
                     $tableHtml = $t['html'] ?? $t['html_content'] ?? $t['content'] ?? '';
+
+                    // Eliminar anchos fijos para evitar overflow en TCPDF
+                    $tableHtml = preg_replace('/\bwidth=["\'][^"\']*["\']/i', '', $tableHtml);
+                    $tableHtml = preg_replace('/(style=["\'][^"\']*)\bwidth\s*:\s*[^;"]+;?([^"\']*["\'])/i', '$1$2', $tableHtml);
 
                     // Limpiar estilos previos (importantísimo para no romper EPA y legibilidad)
                     $tableHtml = preg_replace('/border=["\']\d+["\']/i', 'border="0"', $tableHtml);
