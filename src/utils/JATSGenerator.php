@@ -163,6 +163,28 @@ class JATSGenerator {
         if (empty($figures) && !empty($markupFigures)) {
             $figures = $markupFigures;
         }
+        
+        // Usar siempre las figuras del markup (tienen el HTML actualizado)
+        if (!empty($markupFigures)) {
+            $markupFiguresIndexed = [];
+            foreach ($markupFigures as $mf) {
+                $markupFiguresIndexed[strtolower(trim($mf['label'] ?? ''))] = $mf;
+            }
+            $mergedFigures = [];
+            foreach ($figures as $f) {
+                $key = strtolower(trim($f['label'] ?? ''));
+                $mergedFigures[] = $markupFiguresIndexed[$key] ?? $f;
+            }
+            foreach ($markupFigures as $mf) {
+                $key = strtolower(trim($mf['label'] ?? ''));
+                $found = false;
+                foreach ($mergedFigures as $m) {
+                    if (strtolower(trim($m['label'] ?? '')) === $key) { $found = true; break; }
+                }
+                if (!$found) $mergedFigures[] = $mf;
+            }
+            $figures = $mergedFigures;
+        }
 
         // Body - pasar $tables (ya merged con markup) y $figures
         $body = $this->createBody($dom, $sections, $tables, $figures);
@@ -742,9 +764,30 @@ class JATSGenerator {
         $caption->appendChild($dom->createElement('title', htmlspecialchars($capText)));
         $tableWrap->appendChild($caption);
 
-        if (!empty($tableData['src']) && ($tableData['type'] ?? '') === 'image') {
+        if ((!empty($tableData['src']) || !empty($tableData['file_path'])) && ($tableData['type'] ?? '') === 'image') {
             $graphic = $dom->createElement('graphic');
-            $graphic->setAttribute('xlink:href', htmlspecialchars($tableData['src']));
+            $src = $tableData['src'] ?? ($tableData['file_path'] ?? '');
+            $parsedUrl = parse_url($src, PHP_URL_PATH);
+            $srcBasename = $parsedUrl ? basename($parsedUrl) : basename($src);
+            $ext = strtolower(pathinfo($srcBasename, PATHINFO_EXTENSION));
+            if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'])) {
+                $graphic->setAttribute('mimetype', 'image');
+                $graphic->setAttribute('mime-subtype', $ext === 'jpg' ? 'jpeg' : $ext);
+            }
+            
+            // Embed image as base64
+            $originalPath = $tableData['src'] ?? ($tableData['file_path'] ?? '');
+            if (!empty($originalPath)) {
+                $originalPath = ltrim(parse_url($originalPath, PHP_URL_PATH), '/');
+                $physicalPath = __DIR__ . '/../../public/' . $originalPath;
+                if (file_exists($physicalPath)) {
+                    $mime = mime_content_type($physicalPath) ?: ('image/' . ($ext === 'jpg' ? 'jpeg' : $ext));
+                    $data = file_get_contents($physicalPath);
+                    $srcBasename = 'data:' . $mime . ';base64,' . base64_encode($data);
+                }
+            }
+            
+            $graphic->setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', $srcBasename);
             $tableWrap->appendChild($graphic);
         } elseif (!empty($tableData['html'])) {
             // 1er intento: conversión via DOMDocument (más robusta)
@@ -814,7 +857,29 @@ class JATSGenerator {
         $fig->appendChild($caption);
 
         $graphic = $dom->createElement('graphic');
-        $graphic->setAttribute('xlink:href', htmlspecialchars($figData['src'] ?? ''));
+        $src = $figData['src'] ?? ($figData['file_path'] ?? '');
+        if (!empty($src)) {
+            $parsedUrl = parse_url($src, PHP_URL_PATH);
+            $src = $parsedUrl ? basename($parsedUrl) : basename($src);
+            $ext = strtolower(pathinfo($src, PATHINFO_EXTENSION));
+            if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'])) {
+                $graphic->setAttribute('mimetype', 'image');
+                $graphic->setAttribute('mime-subtype', $ext === 'jpg' ? 'jpeg' : $ext);
+            }
+            
+            // Embed image as base64 to bypass OJS Lens dependent file routing bugs
+            $originalPath = $figData['src'] ?? ($figData['file_path'] ?? '');
+            if (!empty($originalPath)) {
+                $originalPath = ltrim(parse_url($originalPath, PHP_URL_PATH), '/');
+                $physicalPath = __DIR__ . '/../../public/' . $originalPath;
+                if (file_exists($physicalPath)) {
+                    $mime = mime_content_type($physicalPath) ?: ('image/' . ($ext === 'jpg' ? 'jpeg' : $ext));
+                    $data = file_get_contents($physicalPath);
+                    $src = 'data:' . $mime . ';base64,' . base64_encode($data);
+                }
+            }
+        }
+        $graphic->setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', $src);
         $fig->appendChild($graphic);
         
         if (!empty($figData['nota']) && trim($figData['nota']) !== '') {

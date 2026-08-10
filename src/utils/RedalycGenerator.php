@@ -84,7 +84,7 @@ class RedalycGenerator {
         $front->appendChild($this->createJournalMeta($dom, $journal));
         $front->appendChild($this->createArticleMeta($dom, $article, $authors, $affiliations));
         
-        $articleEl->appendChild($this->createBody($dom, $sections));
+        $articleEl->appendChild($this->createBody($dom, $sections, $tables, $figures));
         $articleEl->appendChild($this->createBack($dom, $references, $footnotes));
         
         $xmlContent = $dom->saveXML();
@@ -211,27 +211,128 @@ class RedalycGenerator {
         return $a;
     }
     
-    private function createBody($dom, $sections) {
+    private function createBody($dom, $sections, $tables, $figures) {
         $b = $dom->createElement('body');
-        foreach ($sections as $s) $b->appendChild($this->createSection($dom, $s));
+        foreach ($sections as $s) $b->appendChild($this->createSection($dom, $s, $tables, $figures));
         return $b;
     }
     
-    private function createSection($dom, $section) {
+    private function createSection($dom, $section, $tables, $figures) {
         $s = $dom->createElement('sec'); $s->setAttribute('id', $section['section_id'] ?? 'sec-'.uniqid());
         if (!empty($section['title'])) $s->appendChild($dom->createElement('title', htmlspecialchars($section['title'])));
         if (!empty($section['content'])) {
             $blocks = $this->extractParagraphsFromHtml($section['content']);
             foreach ($blocks as $block) {
                 if (empty(trim($block))) continue;
-                $p = $dom->createElement('p');
-                $txt = $this->htmlToXmlFragment($block);
-                $f = $dom->createDocumentFragment();
-                if (@$f->appendXML($txt)) $p->appendChild($f); else $p->appendChild($dom->createTextNode(strip_tags($txt)));
-                $s->appendChild($p);
+                $clean = trim(strip_tags($block));
+                if (preg_match('/^\[(Tabla|Figura|Table|Figure)\s*([^\]]+)\]$/i', $clean, $m)) {
+                    if (stripos($m[1], 'Tab') !== false) $this->appendTableByLabel($dom, $s, trim($m[1] . ' ' . $m[2]), $tables);
+                    else $this->appendFigureByLabel($dom, $s, trim($m[1] . ' ' . $m[2]), $figures);
+                    continue;
+                }
+                $parts = preg_split('/(\[(?:Tabla|Figura|Table|Figure)\s*[^\]]+\])/i', $block, -1, PREG_SPLIT_DELIM_CAPTURE);
+                $curP = null;
+                foreach ($parts as $part) {
+                    if ($part === '') continue;
+                    if (preg_match('/^\[(Tabla|Table|Figura|Figure)\s*([^\]]+)\]$/i', trim(strip_tags($part)), $m)) {
+                        if ($curP) { $s->appendChild($curP); $curP = null; }
+                        if (stripos($m[1], 'Tab') !== false) $this->appendTableByLabel($dom, $s, trim($m[1] . ' ' . $m[2]), $tables);
+                        else $this->appendFigureByLabel($dom, $s, trim($m[1] . ' ' . $m[2]), $figures);
+                    } else {
+                        if (!$curP) $curP = $dom->createElement('p');
+                        $txt = $this->htmlToXmlFragment($part);
+                        if (trim($txt) !== '') {
+                            $f = $dom->createDocumentFragment();
+                            if (@$f->appendXML($txt)) $curP->appendChild($f);
+                            else $curP->appendChild($dom->createTextNode(strip_tags($txt)));
+                        }
+                    }
+                }
+                if ($curP) $s->appendChild($curP);
             }
         }
         return $s;
+    }
+    
+    private function tableHtmlToXml(string $h): string {
+        $h = preg_replace('/\s+(style|class|id|align|valign|width|height|border|cellspacing|cellpadding|data-[a-z0-9\-]+)="[^"]*"/i', '', $h);
+        libxml_use_internal_errors(true); $tD = new DOMDocument('1.0', 'UTF-8');
+        $tD->loadHTML('<?xml encoding="UTF-8">' . $h, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD); $xpath = new DOMXPath($tD);
+        foreach ($xpath->query('//@*') as $n) if (!in_array($n->nodeName, ['colspan', 'rowspan'])) $n->parentNode->removeAttribute($n->nodeName);
+        libxml_clear_errors(); $tags = $tD->getElementsByTagName('table');
+        return $tags->length > 0 ? $tD->saveXML($tags->item(0)) : '';
+    }
+
+    private function appendTableByLabel($dom, $p, $l, $ts) {
+        $d = null; foreach ($ts as $t) if (strcasecmp(trim($t['label'] ?? ''), $l) === 0) { $d=$t; break; }
+        if (!$d) return; $tw = $dom->createElement('table-wrap'); $tw->setAttribute('id', 't-'.uniqid()); $p->appendChild($tw);
+        $tw->appendChild($dom->createElement('label', htmlspecialchars($d['label'] ?? 'Tabla')));
+        $cap = $dom->createElement('caption'); $capT = trim($d['caption'] ?? ($d['title'] ?? '')); if ($capT === '') $capT = $d['label'] ?? 'Tabla';
+        $cap->appendChild($dom->createElement('title', htmlspecialchars($capT))); $tw->appendChild($cap);
+        if ((!empty($d['src']) || !empty($d['file_path'])) && ($d['type'] ?? '') === 'image') {
+            $g = $dom->createElement('graphic'); 
+            $src = $d['src'] ?? ($d['file_path'] ?? '');
+            $parsedUrl = parse_url($src, PHP_URL_PATH);
+            $srcBasename = $parsedUrl ? basename($parsedUrl) : basename($src);
+            $ext = strtolower(pathinfo($srcBasename, PATHINFO_EXTENSION));
+            if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'])) {
+                $g->setAttribute('mimetype', 'image');
+                $g->setAttribute('mime-subtype', $ext === 'jpg' ? 'jpeg' : $ext);
+            }
+            
+            // Embed image as base64
+            $originalPath = $d['src'] ?? ($d['file_path'] ?? '');
+            if (!empty($originalPath)) {
+                $originalPath = ltrim(parse_url($originalPath, PHP_URL_PATH), '/');
+                $physicalPath = __DIR__ . '/../../public/' . $originalPath;
+                if (file_exists($physicalPath)) {
+                    $mime = mime_content_type($physicalPath) ?: ('image/' . ($ext === 'jpg' ? 'jpeg' : $ext));
+                    $data = file_get_contents($physicalPath);
+                    $srcBasename = 'data:' . $mime . ';base64,' . base64_encode($data);
+                }
+            }
+            
+            $g->setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', $srcBasename); 
+            $tw->appendChild($g);
+        } elseif (!empty($d['html'])) {
+            $f = $dom->createDocumentFragment(); $xml = $this->tableHtmlToXml($d['html']);
+            if ($xml && @$f->appendXML($xml)) $tw->appendChild($f); else $tw->appendChild($dom->createElement('table'));
+        }
+        if (!empty($d['nota'])) { $foot=$dom->createElement('table-wrap-foot'); $fn=$dom->createElement('fn'); $fn->appendChild($dom->createElement('p', 'Nota. '.htmlspecialchars($d['nota']))); $foot->appendChild($fn); $tw->appendChild($foot); }
+    }
+
+    private function appendFigureByLabel($dom, $p, $l, $fs) {
+        $d = null; foreach ($fs as $f) if (strcasecmp(trim($f['label'] ?? ''), $l) === 0) { $d=$f; break; }
+        if (!$d) return; $fig = $dom->createElement('fig'); $fig->setAttribute('id', 'f-'.uniqid()); $p->appendChild($fig);
+        $fig->appendChild($dom->createElement('label', htmlspecialchars($d['label'] ?? 'Figura')));
+        $cap = $dom->createElement('caption'); $capT = trim($d['alt'] ?? ($d['caption'] ?? '')); if ($capT === '') $capT = $d['label'] ?? 'Figura';
+        $cap->appendChild($dom->createElement('title', htmlspecialchars($capT))); $fig->appendChild($cap);
+        $g = $dom->createElement('graphic'); 
+        $src = $d['src'] ?? ($d['file_path'] ?? '');
+        if (!empty($src)) {
+            $parsedUrl = parse_url($src, PHP_URL_PATH);
+            $src = $parsedUrl ? basename($parsedUrl) : basename($src);
+            $ext = strtolower(pathinfo($src, PATHINFO_EXTENSION));
+            if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'])) {
+                $g->setAttribute('mimetype', 'image');
+                $g->setAttribute('mime-subtype', $ext === 'jpg' ? 'jpeg' : $ext);
+            }
+            
+            // Embed image as base64
+            $originalPath = $d['src'] ?? ($d['file_path'] ?? '');
+            if (!empty($originalPath)) {
+                $originalPath = ltrim(parse_url($originalPath, PHP_URL_PATH), '/');
+                $physicalPath = __DIR__ . '/../../public/' . $originalPath;
+                if (file_exists($physicalPath)) {
+                    $mime = mime_content_type($physicalPath) ?: ('image/' . ($ext === 'jpg' ? 'jpeg' : $ext));
+                    $data = file_get_contents($physicalPath);
+                    $src = 'data:' . $mime . ';base64,' . base64_encode($data);
+                }
+            }
+        }
+        $g->setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', $src); 
+        $fig->appendChild($g);
+        if (!empty($d['nota'])) $fig->appendChild($dom->createElement('p', 'Nota. '.htmlspecialchars($d['nota'])));
     }
 
     private function extractParagraphsFromHtml(string $h): array {

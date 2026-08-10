@@ -69,6 +69,27 @@ class ScieloGenerator {
 
         if (empty($figures) && !empty($markupFigures)) $figures = $markupFigures;
         
+        if (!empty($markupFigures)) {
+            $markupFiguresIndexed = [];
+            foreach ($markupFigures as $mf) {
+                $markupFiguresIndexed[strtolower(trim($mf['label'] ?? ''))] = $mf;
+            }
+            $mergedFigures = [];
+            foreach ($figures as $f) {
+                $key = strtolower(trim($f['label'] ?? ''));
+                $mergedFigures[] = $markupFiguresIndexed[$key] ?? $f;
+            }
+            foreach ($markupFigures as $mf) {
+                $key = strtolower(trim($mf['label'] ?? ''));
+                $found = false;
+                foreach ($mergedFigures as $m) {
+                    if (strtolower(trim($m['label'] ?? '')) === $key) { $found = true; break; }
+                }
+                if (!$found) $mergedFigures[] = $mf;
+            }
+            $figures = $mergedFigures;
+        }
+        
         $dom = new DOMDocument('1.0', 'UTF-8');
         $dom->formatOutput = true;
         
@@ -325,8 +346,31 @@ class ScieloGenerator {
         $tw->appendChild($dom->createElement('label', htmlspecialchars($d['label'] ?? 'Tabla')));
         $cap = $dom->createElement('caption'); $capT = trim($d['caption'] ?? ($d['title'] ?? '')); if ($capT === '') $capT = $d['label'] ?? 'Tabla';
         $cap->appendChild($dom->createElement('title', htmlspecialchars($capT))); $tw->appendChild($cap);
-        if (!empty($d['src']) && ($d['type'] ?? '') === 'image') {
-            $g = $dom->createElement('graphic'); $g->setAttribute('xlink:href', htmlspecialchars($d['src'])); $tw->appendChild($g);
+        if ((!empty($d['src']) || !empty($d['file_path'])) && ($d['type'] ?? '') === 'image') {
+            $g = $dom->createElement('graphic'); 
+            $src = $d['src'] ?? ($d['file_path'] ?? '');
+            $parsedUrl = parse_url($src, PHP_URL_PATH);
+            $srcBasename = $parsedUrl ? basename($parsedUrl) : basename($src);
+            $ext = strtolower(pathinfo($srcBasename, PATHINFO_EXTENSION));
+            if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'])) {
+                $g->setAttribute('mimetype', 'image');
+                $g->setAttribute('mime-subtype', $ext === 'jpg' ? 'jpeg' : $ext);
+            }
+            
+            // Embed image as base64
+            $originalPath = $d['src'] ?? ($d['file_path'] ?? '');
+            if (!empty($originalPath)) {
+                $originalPath = ltrim(parse_url($originalPath, PHP_URL_PATH), '/');
+                $physicalPath = __DIR__ . '/../../public/' . $originalPath;
+                if (file_exists($physicalPath)) {
+                    $mime = mime_content_type($physicalPath) ?: ('image/' . ($ext === 'jpg' ? 'jpeg' : $ext));
+                    $data = file_get_contents($physicalPath);
+                    $srcBasename = 'data:' . $mime . ';base64,' . base64_encode($data);
+                }
+            }
+            
+            $g->setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', $srcBasename); 
+            $tw->appendChild($g);
         } elseif (!empty($d['html'])) {
             $f = $dom->createDocumentFragment(); $xml = $this->tableHtmlToXml($d['html']);
             if ($xml && @$f->appendXML($xml)) $tw->appendChild($f); else $tw->appendChild($dom->createElement('table'));
@@ -340,7 +384,31 @@ class ScieloGenerator {
         $fig->appendChild($dom->createElement('label', htmlspecialchars($d['label'] ?? 'Figura')));
         $cap = $dom->createElement('caption'); $capT = trim($d['alt'] ?? ($d['caption'] ?? '')); if ($capT === '') $capT = $d['label'] ?? 'Figura';
         $cap->appendChild($dom->createElement('title', htmlspecialchars($capT))); $fig->appendChild($cap);
-        $g = $dom->createElement('graphic'); $g->setAttribute('xlink:href', htmlspecialchars($d['src'] ?? '')); $fig->appendChild($g);
+        $g = $dom->createElement('graphic'); 
+        $src = $d['src'] ?? ($d['file_path'] ?? '');
+        if (!empty($src)) {
+            $parsedUrl = parse_url($src, PHP_URL_PATH);
+            $src = $parsedUrl ? basename($parsedUrl) : basename($src);
+            $ext = strtolower(pathinfo($src, PATHINFO_EXTENSION));
+            if (in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'])) {
+                $g->setAttribute('mimetype', 'image');
+                $g->setAttribute('mime-subtype', $ext === 'jpg' ? 'jpeg' : $ext);
+            }
+            
+            // Embed image as base64
+            $originalPath = $d['src'] ?? ($d['file_path'] ?? '');
+            if (!empty($originalPath)) {
+                $originalPath = ltrim(parse_url($originalPath, PHP_URL_PATH), '/');
+                $physicalPath = __DIR__ . '/../../public/' . $originalPath;
+                if (file_exists($physicalPath)) {
+                    $mime = mime_content_type($physicalPath) ?: ('image/' . ($ext === 'jpg' ? 'jpeg' : $ext));
+                    $data = file_get_contents($physicalPath);
+                    $src = 'data:' . $mime . ';base64,' . base64_encode($data);
+                }
+            }
+        }
+        $g->setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', $src); 
+        $fig->appendChild($g);
         if (!empty($d['nota'])) $fig->appendChild($dom->createElement('p', 'Nota. '.htmlspecialchars($d['nota'])));
     }
 
