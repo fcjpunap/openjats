@@ -395,13 +395,13 @@ CREATE TABLE `article_references` (
   `authors` text DEFAULT NULL,
   `year` varchar(10) DEFAULT NULL,
   `title` text DEFAULT NULL,
-  `source` varchar(255) DEFAULT NULL,
+  `source` text DEFAULT NULL,
   `volume` varchar(20) DEFAULT NULL,
   `issue` varchar(20) DEFAULT NULL,
   `pages` varchar(50) DEFAULT NULL,
   `doi` varchar(100) DEFAULT NULL,
   `url` varchar(500) DEFAULT NULL,
-  `publisher` varchar(255) DEFAULT NULL,
+  `publisher` text DEFAULT NULL,
   `reference_order` int(11) NOT NULL,
   `full_citation` text DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
