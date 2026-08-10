@@ -234,8 +234,10 @@ if ($action === 'create_issue') {
                 }
             }
 
-            $dcNodes = clone $rec->metadata->children('http://www.openarchives.org/OAI/2.0/oai_dc/')->dc;
-            if(!$dcNodes) continue;
+            if (!isset($rec->metadata)) continue;
+            $oaiDc = $rec->metadata->children('http://www.openarchives.org/OAI/2.0/oai_dc/');
+            if (!$oaiDc || !isset($oaiDc->dc)) continue;
+            $dcNodes = clone $oaiDc->dc;
             
             $dcNodes->registerXPathNamespace('dc', 'http://purl.org/dc/elements/1.1/');
             
@@ -320,7 +322,7 @@ if ($action === 'create_issue') {
         $nextToken = ($tokenNode && (string)$tokenNode[0] !== '') ? (string)$tokenNode[0] : null;
 
         echo json_encode(['success' => true, 'message' => "Cosechados: $countArts manuscritos nuevos, $countIssues fascículos nuevos, $countSections secciones nuevas.", 'resumptionToken' => $nextToken]);
-    } catch(Exception $e) {
+    } catch(Throwable $e) {
         echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
 } elseif ($action === 'clean_oai') {
